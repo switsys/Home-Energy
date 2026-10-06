@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "next build && mkdir -p .next/standalone/.next && cp -a .next/static .next/standalone/.next/",
     "dev": "next dev",
-    "start": "next start",
+    "start": "node --env-file=../../.env .next/standalone/server.js",
     "typecheck": "tsc --noEmit",
     "test": "echo \"No web tests yet\""
   },
