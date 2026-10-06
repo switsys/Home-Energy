@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsup src/server.ts --format esm --sourcemap --clean --noExternal @home-energy/core --noExternal @home-energy/tibber",
+    "build": "tsup src/server.ts --format esm --sourcemap --clean",
     "dev": "tsx watch --env-file=../../.env src/server.ts",
     "test": "vitest run",
     "typecheck": "tsc --project tsconfig.json --noEmit"
