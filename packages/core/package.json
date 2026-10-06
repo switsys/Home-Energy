@@ -7,11 +7,12 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
+    "build": "tsup src/index.ts --format esm --dts --clean",
     "test": "vitest run",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }
