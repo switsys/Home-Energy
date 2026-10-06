@@ -50,6 +50,10 @@ type ParsedSlot = Readonly<{
   startMs: number;
 }>;
 
+function roundPrice(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100_000) / 100_000;
+}
+
 function parseSlot(price: PriceSlot): ParsedSlot | null {
   if (price.total === null || price.startsAt === null) return null;
   const startMs = Date.parse(price.startsAt);
@@ -57,7 +61,7 @@ function parseSlot(price: PriceSlot): ParsedSlot | null {
 
   return {
     price: {
-      startsAt: price.startsAt,
+      startsAt: new Date(startMs).toISOString(),
       total: price.total,
       currency: price.currency,
       level: price.level,
@@ -114,7 +118,9 @@ function cheapestWindow(
     }
 
     const totals = window.map((slot) => slot.price.total);
-    const average = totals.reduce((sum, value) => sum + value, 0) / totals.length;
+    const average = roundPrice(
+      totals.reduce((sum, value) => sum + value, 0) / totals.length,
+    );
     const candidate: EnergyPriceWindow = {
       minutes: slotCount * 15,
       startsAt: window[0].price.startsAt,
