@@ -36,7 +36,10 @@ describe("buildEnergyAdvice", () => {
     );
 
     expect(advice.recommendation.action).toBe("run_now");
-    expect(advice.current?.total).toBe(0.0543);
+    expect(advice.current).toMatchObject({
+      startsAt: "2026-10-05T20:15:00.000Z",
+      total: 0.0543,
+    });
   });
 
   it("finds a cheaper contiguous hour and recommends waiting", () => {
@@ -54,8 +57,32 @@ describe("buildEnergyAdvice", () => {
       new Date("2026-10-05T19:50:00+02:00"),
     );
 
-    expect(advice.cheapestWindows.minutes60?.average).toBe(0.2);
+    expect(advice.cheapestWindows.minutes60).toMatchObject({
+      startsAt: "2026-10-05T18:15:00.000Z",
+      endsAt: "2026-10-05T19:15:00.000Z",
+      average: 0.2,
+    });
     expect(advice.recommendation.action).toBe("wait");
-    expect(advice.recommendation.nextCheaperAt).toBe("2026-10-05T20:15:00+02:00");
+    expect(advice.recommendation.nextCheaperAt).toBe("2026-10-05T18:15:00.000Z");
+  });
+
+  it("rounds window averages instead of exposing floating-point noise", () => {
+    const slots = [
+      price("2026-10-07T12:15:00+02:00", 1.1736),
+      price("2026-10-07T12:30:00+02:00", 1.2233),
+      price("2026-10-07T12:45:00+02:00", 1.2107),
+      price("2026-10-07T13:00:00+02:00", 1.2234),
+      price("2026-10-07T13:15:00+02:00", 1.1736),
+      price("2026-10-07T13:30:00+02:00", 1.2233),
+      price("2026-10-07T13:45:00+02:00", 1.2045),
+      price("2026-10-07T14:00:00+02:00", 1.2217),
+    ];
+
+    const advice = buildEnergyAdvice(
+      schedule(slots[0], slots),
+      new Date("2026-10-07T12:16:00+02:00"),
+    );
+
+    expect(advice.cheapestWindows.minutes120?.average).toBe(1.20775);
   });
 });
