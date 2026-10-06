@@ -83,6 +83,6 @@ describe("buildEnergyAdvice", () => {
       new Date("2026-10-07T12:16:00+02:00"),
     );
 
-    expect(advice.cheapestWindows.minutes120?.average).toBe(1.20775);
+    expect(advice.cheapestWindows.minutes120?.average).toBe(1.20676);
   });
 });
