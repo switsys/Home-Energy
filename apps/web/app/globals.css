@@ -370,8 +370,123 @@ footer {
   .heading h1 { font-size: 35px; }
   .hero-grid,
   .window-grid,
-  .two-column { grid-template-columns: 1fr; }
+  .two-column,
+  .planner-grid { grid-template-columns: 1fr; }
+  .planner-heading { align-items: flex-start; flex-direction: column; }
+  .planner-form { width: 100%; flex-wrap: wrap; }
   .consumption-card { grid-column: auto; }
   .card { min-height: 165px; }
   footer { flex-direction: column; }
+}
+
+
+.planner-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.planner-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 9px;
+}
+
+.planner-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+}
+
+.planner-form input {
+  width: 96px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.planner-form input:focus {
+  border-color: #3f7956;
+}
+
+.planner-form button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #326b49;
+  border-radius: 8px;
+  background: var(--green-soft);
+  color: var(--green);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.planner-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 12px;
+}
+
+.planner-result,
+.planner-error {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(21, 29, 24, .98), rgba(15, 21, 17, .98));
+}
+
+.planner-result {
+  min-height: 154px;
+  padding: 19px;
+}
+
+.planner-result strong {
+  display: block;
+  margin-top: 18px;
+  font-size: 24px;
+  letter-spacing: -.7px;
+}
+
+.planner-result p {
+  margin: 8px 0 0;
+  color: #a7b6ac;
+  font-size: 12px;
+}
+
+.planner-result small {
+  display: block;
+  margin-top: 14px;
+  color: #6f8075;
+  font-size: 10px;
+}
+
+.planner-wait {
+  border-color: #5c4c25;
+  background: linear-gradient(180deg, #2d2718, #18160f);
+}
+
+.planner-wait strong { color: var(--amber); }
+
+.planner-run_now {
+  border-color: #275f3f;
+  background: linear-gradient(180deg, #173323, #101b14);
+}
+
+.planner-run_now strong { color: var(--green); }
+
+.planner-error {
+  padding: 18px;
+  color: var(--red);
+  font-size: 11px;
 }
