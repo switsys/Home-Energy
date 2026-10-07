@@ -64,4 +64,78 @@ describe("Home-Energy API", () => {
     expect(allowed.statusCode).toBe(200);
     expect(allowed.json()).toMatchObject({ provider: "fake", homeId: "home-1" });
   });
+  it("plans a load without exposing the provider credential", async () => {
+    const today: PriceSchedule["today"] = [
+      {
+        total: 2,
+        energy: 2,
+        tax: 0,
+        startsAt: "2026-10-07T10:00:00+02:00",
+        currency: "SEK",
+        level: "EXPENSIVE",
+      },
+      {
+        total: 2,
+        energy: 2,
+        tax: 0,
+        startsAt: "2026-10-07T10:15:00+02:00",
+        currency: "SEK",
+        level: "EXPENSIVE",
+      },
+      ...["10:30", "10:45", "11:00", "11:15"].map((time) => ({
+        total: 0.5,
+        energy: 0.5,
+        tax: 0,
+        startsAt: `2026-10-07T${time}:00+02:00`,
+        currency: "SEK",
+        level: "CHEAP" as const,
+      })),
+    ];
+    const plannerSchedule: PriceSchedule = {
+      provider: "fake",
+      homeId: "home-1",
+      current: today[0],
+      today,
+      tomorrow: [],
+    };
+    const plannerProvider: EnergyProvider = {
+      ...provider,
+      prices: async () => plannerSchedule,
+    };
+    const app = buildApp({
+      provider: plannerProvider,
+      apiKey: "secret",
+      defaultHomeId: "home-1",
+      clock: () => new Date("2026-10-07T10:00:00+02:00"),
+    });
+
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/load-plan?minutes=60&powerKw=2",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      action: "wait",
+      best: {
+        startsAt: "2026-10-07T08:30:00.000Z",
+        estimatedCost: 1,
+      },
+      savings: 1.5,
+    });
+  });
+
+  it("validates load planner inputs", async () => {
+    const app = buildApp({ provider, apiKey: "secret", defaultHomeId: "home-1" });
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/load-plan?minutes=0&powerKw=2",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: "invalid_minutes" });
+  });
+
 });
