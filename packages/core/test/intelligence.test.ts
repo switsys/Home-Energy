@@ -42,6 +42,31 @@ describe("buildEnergyAdvice", () => {
     });
   });
 
+  it("does not recommend run_now for a very expensive current price", () => {
+    const current = price(
+      "2026-10-07T12:00:00+02:00",
+      1.21,
+      "VERY_EXPENSIVE",
+    );
+    const slots = [
+      current,
+      price("2026-10-07T12:15:00+02:00", 1.17),
+      price("2026-10-07T12:30:00+02:00", 1.50),
+      price("2026-10-07T12:45:00+02:00", 1.60),
+      price("2026-10-07T13:00:00+02:00", 1.70),
+      price("2026-10-07T13:15:00+02:00", 1.80),
+      price("2026-10-07T13:30:00+02:00", 1.90),
+      price("2026-10-07T13:45:00+02:00", 2.00),
+    ];
+
+    const advice = buildEnergyAdvice(
+      schedule(current, slots),
+      new Date("2026-10-07T12:05:00+02:00"),
+    );
+
+    expect(advice.recommendation.action).not.toBe("run_now");
+  });
+
   it("finds a cheaper contiguous hour and recommends waiting", () => {
     const slots = [
       price("2026-10-05T19:45:00+02:00", 1.0),

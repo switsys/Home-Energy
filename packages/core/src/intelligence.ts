@@ -186,7 +186,10 @@ function recommendation(
 
   if (
     current.level === "VERY_CHEAP" ||
-    (currentPercentile !== null && currentPercentile <= 25)
+    (current.level !== "EXPENSIVE" &&
+      current.level !== "VERY_EXPENSIVE" &&
+      currentPercentile !== null &&
+      currentPercentile <= 25)
   ) {
     return {
       action: "run_now",
