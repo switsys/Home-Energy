@@ -48,6 +48,30 @@ type Consumption = Readonly<{
   currency: string | null;
 }>;
 
+type LoadPlanWindow = Readonly<{
+  startsAt: string;
+  endsAt: string;
+  durationMinutes: number;
+  powerKw: number;
+  energyKwh: number;
+  averagePrice: number;
+  estimatedCost: number;
+  currency: string;
+}>;
+
+type LoadPlan = Readonly<{
+  action: "run_now" | "wait";
+  reason: string;
+  immediate: LoadPlanWindow | null;
+  best: LoadPlanWindow;
+  savings: number | null;
+  savingsPercent: number | null;
+}>;
+
+type DashboardPageProps = Readonly<{
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}>;
+
 const STOCKHOLM = "Europe/Stockholm";
 
 function formatTime(value: string): string {
@@ -124,9 +148,29 @@ function signalText(action: Advice["recommendation"]["action"]) {
   };
 }
 
+function queryNumber(
+  value: string | string[] | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const parsed = raw === undefined ? Number.NaN : Number(raw);
+  return Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum
+    ? parsed
+    : fallback;
+}
+
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: DashboardPageProps) {
+  const query = await searchParams;
+  const plannerMinutes = Math.round(
+    queryNumber(query.minutes, 120, 15, 24 * 60),
+  );
+  const plannerPowerKw = queryNumber(query.powerKw, 1.5, 0.1, 100);
   let advice: Advice;
   let homes: readonly Home[];
   let consumption: Consumption;
@@ -147,6 +191,20 @@ export default async function DashboardPage() {
         </section>
       </main>
     );
+  }
+
+  let loadPlan: LoadPlan | null = null;
+  let loadPlanError: string | null = null;
+
+  try {
+    const params = new URLSearchParams({
+      minutes: String(plannerMinutes),
+      powerKw: String(plannerPowerKw),
+    });
+    loadPlan = await api<LoadPlan>(`/api/energy/load-plan?${params.toString()}`);
+  } catch (error) {
+    loadPlanError =
+      error instanceof Error ? error.message : "Unable to calculate load plan";
   }
 
   const home = homes.find((item) => item.id === advice.homeId);
@@ -240,6 +298,91 @@ export default async function DashboardPage() {
             </p>
             <small>{home?.gridCompany ?? "Grid company unavailable"}</small>
           </article>
+        </section>
+
+        <section className="section planner-section">
+          <div className="section-heading planner-heading">
+            <div>
+              <span className="kicker">LOAD PLANNER</span>
+              <h2>When should I run it?</h2>
+            </div>
+
+            <form className="planner-form" method="get">
+              <label>
+                <span>Minutes</span>
+                <input
+                  defaultValue={plannerMinutes}
+                  max="1440"
+                  min="15"
+                  name="minutes"
+                  step="15"
+                  type="number"
+                />
+              </label>
+              <label>
+                <span>Power kW</span>
+                <input
+                  defaultValue={plannerPowerKw}
+                  max="100"
+                  min="0.1"
+                  name="powerKw"
+                  step="0.1"
+                  type="number"
+                />
+              </label>
+              <button type="submit">Plan load</button>
+            </form>
+          </div>
+
+          {loadPlan ? (
+            <div className="planner-grid">
+              <article className={`planner-result planner-${loadPlan.action}`}>
+                <span className="label">RECOMMENDED START</span>
+                <strong>
+                  {loadPlan.action === "wait"
+                    ? `WAIT UNTIL ${formatTime(loadPlan.best.startsAt)}`
+                    : "RUN NOW"}
+                </strong>
+                <p>
+                  {formatTime(loadPlan.best.startsAt)}–
+                  {formatTime(loadPlan.best.endsAt)} ·{" "}
+                  {money(loadPlan.best.estimatedCost, loadPlan.best.currency)}
+                </p>
+                <small>
+                  {number(loadPlan.best.energyKwh, 2)} kWh estimated at{" "}
+                  {money(loadPlan.best.averagePrice, loadPlan.best.currency)}
+                  /kWh
+                </small>
+              </article>
+
+              <article className="planner-result">
+                <span className="label">STARTING NOW</span>
+                <strong>
+                  {loadPlan.immediate
+                    ? money(
+                        loadPlan.immediate.estimatedCost,
+                        loadPlan.immediate.currency,
+                      )
+                    : "—"}
+                </strong>
+                <p>
+                  {loadPlan.savings === null
+                    ? "Immediate comparison unavailable."
+                    : `Potential saving: ${money(
+                        loadPlan.savings,
+                        loadPlan.best.currency,
+                      )}`}
+                </p>
+                <small>
+                  {loadPlan.savingsPercent === null
+                    ? `${plannerMinutes} min · ${number(plannerPowerKw, 1)} kW`
+                    : `${number(loadPlan.savingsPercent, 1)}% cheaper at the best start`}
+                </small>
+              </article>
+            </div>
+          ) : (
+            <div className="planner-error">{loadPlanError}</div>
+          )}
         </section>
 
         <section className="section">
