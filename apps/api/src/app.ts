@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
   buildEnergyAdvice,
+  buildLoadPlan,
   type EnergyProvider,
   type PriceSchedule,
   type PriceSlot,
@@ -197,6 +198,41 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       try {
         const homeId = await resolveHomeId(request.query.homeId);
         return buildEnergyAdvice(await prices(homeId), clock());
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get<{
+    Querystring: { homeId?: string; minutes?: string; powerKw?: string };
+  }>(
+    "/api/energy/load-plan",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      const minutes = Number(request.query.minutes);
+      if (!Number.isInteger(minutes) || minutes < 15 || minutes > 24 * 60) {
+        return reply.status(400).send({
+          error: "invalid_minutes",
+          message: "minutes must be an integer from 15 to 1440",
+        });
+      }
+
+      const powerKw = Number(request.query.powerKw);
+      if (!Number.isFinite(powerKw) || powerKw <= 0 || powerKw > 100) {
+        return reply.status(400).send({
+          error: "invalid_power_kw",
+          message: "powerKw must be greater than 0 and no more than 100",
+        });
+      }
+
+      try {
+        const homeId = await resolveHomeId(request.query.homeId);
+        return buildLoadPlan(
+          await prices(homeId),
+          { durationMinutes: minutes, powerKw },
+          clock(),
+        );
       } catch (error) {
         return unavailable(reply, error);
       }
