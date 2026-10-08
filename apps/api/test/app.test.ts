@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dalaEnergi2026, type EnergyProvider, type PriceSchedule } from "@home-energy/core";
+import { faluElnat2026, type EnergyProvider, type PriceSchedule } from "@home-energy/core";
 import { buildApp } from "../src/app.js";
 
 const schedule: PriceSchedule = {
@@ -176,7 +176,7 @@ describe("Home-Energy API", () => {
       provider: tariffProvider,
       apiKey: "secret",
       defaultHomeId: "home-1",
-      gridTariff: dalaEnergi2026,
+      gridTariff: faluElnat2026,
       clock: () => new Date("2026-10-08T12:00:00+02:00"),
     });
 
@@ -190,11 +190,11 @@ describe("Home-Energy API", () => {
     expect(response.json()).toMatchObject({
       best: {
         energyPriceCost: 2,
-        gridTransferCost: 0.18,
-        estimatedCost: 2.18,
+        gridTransferCost: 0.225,
+        estimatedCost: 2.225,
         grid: {
-          tariffId: "dala-energi-2026",
-          highestDemandRatePerKwMonth: 35,
+          tariffId: "falu-elnat-2026",
+          highestDemandRatePerKwMonth: 0,
           demandChargeIncludedInEstimatedCost: false,
         },
       },
