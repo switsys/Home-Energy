@@ -2,7 +2,9 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import {
   buildEnergyAdvice,
   buildLoadPlan,
+  resolveGridTariff,
   type EnergyProvider,
+  type GridTariff,
   type PriceSchedule,
   type PriceSlot,
 } from "@home-energy/core";
@@ -24,6 +26,7 @@ export type AppOptions = Readonly<{
   clock?: () => Date;
   apiKey?: string | null;
   defaultHomeId?: string | null;
+  gridTariff?: GridTariff | null;
 }>;
 
 function configured(value: string | null | undefined): string | null {
@@ -109,6 +112,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       ? configured(process.env.HOME_ENERGY_HOME_ID) ??
         configured(process.env.TIBBER_HOME_ID)
       : configured(options.defaultHomeId);
+  const gridTariff =
+    options.gridTariff === undefined
+      ? resolveGridTariff(configured(process.env.HOME_ENERGY_GRID_TARIFF))
+      : options.gridTariff;
   const requireAccess = accessGuard(apiKey);
 
   let homesCache: TimedCache<Awaited<ReturnType<EnergyProvider["homes"]>>> | null =
@@ -164,6 +171,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     configured: provider !== null,
     protected: apiKey !== null,
     provider: provider?.id ?? null,
+    gridTariff: gridTariff?.id ?? null,
   }));
 
   app.get(
@@ -232,6 +240,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
           await prices(homeId),
           { durationMinutes: minutes, powerKw },
           clock(),
+          gridTariff,
         );
       } catch (error) {
         return unavailable(reply, error);
