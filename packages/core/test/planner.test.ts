@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLoadPlan, dalaEnergi2026, type PriceSchedule, type PriceSlot } from "../src/index.js";
+import { buildLoadPlan, faluElnat2026, type PriceSchedule, type PriceSlot } from "../src/index.js";
 
 function price(startsAt: string, total: number): PriceSlot {
   return {
@@ -84,19 +84,19 @@ describe("buildLoadPlan", () => {
       schedule(prices),
       { durationMinutes: 60, powerKw: 2 },
       new Date("2026-10-08T12:00:00+02:00"),
-      dalaEnergi2026,
+      faluElnat2026,
     );
 
     expect(plan.best).toMatchObject({
       energyKwh: 2,
       energyPriceCost: 2,
-      gridTransferCost: 0.18,
-      estimatedCost: 2.18,
-      averagePrice: 1.09,
+      gridTransferCost: 0.225,
+      estimatedCost: 2.225,
+      averagePrice: 1.1125,
     });
     expect(plan.best.grid).toMatchObject({
-      tariffId: "dala-energi-2026",
-      highestDemandRatePerKwMonth: 35,
+      tariffId: "falu-elnat-2026",
+      highestDemandRatePerKwMonth: 0,
       peakWindowMinutes: 60,
       peakAveragingCount: 3,
       demandChargeIncludedInEstimatedCost: false,
