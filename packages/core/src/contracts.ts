@@ -64,4 +64,8 @@ export interface EnergyProvider {
   homes(): Promise<readonly EnergyHome[]>;
   prices(homeId: string): Promise<PriceSchedule>;
   consumption(homeId: string, days: number): Promise<ConsumptionReport>;
+  hourlyConsumption?(
+    homeId: string,
+    hours: number,
+  ): Promise<ConsumptionReport>;
 }
