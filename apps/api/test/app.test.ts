@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { EnergyProvider, PriceSchedule } from "@home-energy/core";
+import { dalaEnergi2026, type EnergyProvider, type PriceSchedule } from "@home-energy/core";
 import { buildApp } from "../src/app.js";
 
 const schedule: PriceSchedule = {
@@ -44,6 +44,7 @@ describe("Home-Energy API", () => {
       configured: true,
       protected: true,
       provider: "fake",
+      gridTariff: null,
     });
   });
 
@@ -123,6 +124,80 @@ describe("Home-Energy API", () => {
         estimatedCost: 1,
       },
       savings: 1.5,
+    });
+  });
+
+  it("applies a configured grid tariff to the load plan", async () => {
+    const today: PriceSchedule["today"] = [
+      {
+        total: 1,
+        energy: 1,
+        tax: 0,
+        startsAt: "2026-10-08T12:00:00+02:00",
+        currency: "SEK",
+        level: "NORMAL",
+      },
+      {
+        total: 1,
+        energy: 1,
+        tax: 0,
+        startsAt: "2026-10-08T12:15:00+02:00",
+        currency: "SEK",
+        level: "NORMAL",
+      },
+      {
+        total: 1,
+        energy: 1,
+        tax: 0,
+        startsAt: "2026-10-08T12:30:00+02:00",
+        currency: "SEK",
+        level: "NORMAL",
+      },
+      {
+        total: 1,
+        energy: 1,
+        tax: 0,
+        startsAt: "2026-10-08T12:45:00+02:00",
+        currency: "SEK",
+        level: "NORMAL",
+      },
+    ];
+    const tariffProvider: EnergyProvider = {
+      ...provider,
+      prices: async () => ({
+        provider: "fake",
+        homeId: "home-1",
+        current: today[0],
+        today,
+        tomorrow: [],
+      }),
+    };
+    const app = buildApp({
+      provider: tariffProvider,
+      apiKey: "secret",
+      defaultHomeId: "home-1",
+      gridTariff: dalaEnergi2026,
+      clock: () => new Date("2026-10-08T12:00:00+02:00"),
+    });
+
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/load-plan?minutes=60&powerKw=2",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      best: {
+        energyPriceCost: 2,
+        gridTransferCost: 0.18,
+        estimatedCost: 2.18,
+        grid: {
+          tariffId: "dala-energi-2026",
+          highestDemandRatePerKwMonth: 35,
+          demandChargeIncludedInEstimatedCost: false,
+        },
+      },
     });
   });
 
