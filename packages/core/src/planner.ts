@@ -317,6 +317,7 @@ export function buildLoadPlan(
         input.durationMinutes,
         input.powerKw,
         gridTariff,
+        demandPeaks,
       ),
     )
     .filter((window): window is LoadPlanWindow => window !== null);
