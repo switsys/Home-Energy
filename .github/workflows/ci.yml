@@ -38,8 +38,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build core package
-        run: pnpm --filter @home-energy/core build
+      - name: Build test dependencies
+        run: |
+          pnpm --filter @home-energy/core build
+          pnpm --filter @home-energy/tibber build
 
       - name: Test core
         run: pnpm --filter @home-energy/core test
