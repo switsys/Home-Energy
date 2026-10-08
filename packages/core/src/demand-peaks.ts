@@ -256,11 +256,7 @@ export function estimatePlannedDemandImpact(
           Math.max(...plannedDailyPeaks.map((peak) => peak.averageKw)),
         );
 
-  if (
-    plannedDailyPeaks.length === 0 ||
-    (report !== null &&
-      (report.status === "inactive" || report.demandRatePerKwMonth <= 0))
-  ) {
+  if (plannedDailyPeaks.length === 0) {
     return {
       status: "none",
       thresholdKw: report?.thresholdKw ?? null,
@@ -281,6 +277,36 @@ export function estimatePlannedDemandImpact(
       projectedMinimumDemandCharge: null,
       minimumIncrementalDemandCharge: null,
       demandRatePerKwMonth: 0,
+    };
+  }
+
+  const planningMonths = new Set(
+    plannedDailyPeaks.map((peak) => peak.date.slice(0, 7)),
+  );
+  const sameBillingMonth =
+    planningMonths.size === 1 && planningMonths.has(report.billingMonth);
+
+  if (!sameBillingMonth) {
+    return {
+      status: "unknown",
+      thresholdKw: null,
+      plannedPeakContributionKw,
+      currentEstimatedDemandCharge: null,
+      projectedMinimumDemandCharge: null,
+      minimumIncrementalDemandCharge: null,
+      demandRatePerKwMonth: report.demandRatePerKwMonth,
+    };
+  }
+
+  if (report.status === "inactive" || report.demandRatePerKwMonth <= 0) {
+    return {
+      status: "none",
+      thresholdKw: report.thresholdKw,
+      plannedPeakContributionKw,
+      currentEstimatedDemandCharge: report.estimatedDemandCharge,
+      projectedMinimumDemandCharge: report.estimatedDemandCharge,
+      minimumIncrementalDemandCharge: 0,
+      demandRatePerKwMonth: report.demandRatePerKwMonth,
     };
   }
 
