@@ -1,4 +1,9 @@
 import type { PriceSchedule, PriceSlot } from "./contracts.js";
+import {
+  estimatePlannedDemandImpact,
+  type DemandPeakReport,
+  type PlannedDemandImpact,
+} from "./demand-peaks.js";
 import type {
   GridLoadPeriod,
   GridSeason,
@@ -7,6 +12,21 @@ import type {
 
 const SLOT_MS = 15 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
+const STOCKHOLM = "Europe/Stockholm";
+
+function stockholmDate(atMs: number): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: STOCKHOLM,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(atMs));
+
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
 
 export type LoadPlanAction = "run_now" | "wait";
 
@@ -25,6 +45,7 @@ export type LoadPlanGridSummary = Readonly<{
   peakWindowMinutes: number;
   peakAveragingCount: number;
   demandChargeIncludedInEstimatedCost: false;
+  demandImpact: PlannedDemandImpact;
   periods: readonly LoadPlanGridPeriod[];
 }>;
 
@@ -38,6 +59,7 @@ export type LoadPlanWindow = Readonly<{
   energyPriceCost: number;
   gridTransferCost: number;
   estimatedCost: number;
+  comparisonCost: number;
   currency: string;
   grid: LoadPlanGridSummary | null;
 }>;
@@ -103,6 +125,7 @@ function buildWindow(
   durationMinutes: number,
   powerKw: number,
   gridTariff: GridTariff | null,
+  demandPeaks: DemandPeakReport | null,
 ): LoadPlanWindow | null {
   const endMs = startMs + durationMinutes * 60_000;
   let cursor = startMs;
@@ -121,6 +144,10 @@ function buildWindow(
       minutes: number;
       demandRatePerKwMonth: number;
     }
+  >();
+  const demandHourEnergy = new Map<
+    number,
+    { date: string; energyKwh: number }
   >();
 
   for (const slot of slots) {
@@ -163,6 +190,23 @@ function buildWindow(
         minutes: (current?.minutes ?? 0) + overlapMinutes,
         demandRatePerKwMonth: quote.demandRatePerKwMonth,
       });
+
+      if (quote.demandRatePerKwMonth > 0) {
+        let demandCursor = overlapStart;
+        while (demandCursor < overlapEnd) {
+          const hourStart = Math.floor(demandCursor / HOUR_MS) * HOUR_MS;
+          const hourEnd = hourStart + HOUR_MS;
+          const segmentEnd = Math.min(overlapEnd, hourEnd);
+          const segmentHours = (segmentEnd - demandCursor) / HOUR_MS;
+          const existing = demandHourEnergy.get(hourStart);
+          demandHourEnergy.set(hourStart, {
+            date: existing?.date ?? stockholmDate(hourStart),
+            energyKwh:
+              (existing?.energyKwh ?? 0) + powerKw * segmentHours,
+          });
+          demandCursor = segmentEnd;
+        }
+      }
     }
 
     cursor = overlapEnd;
@@ -179,6 +223,29 @@ function buildWindow(
     minutes: round(period.minutes, 1),
   }));
 
+  const dailyContributions = new Map<string, number>();
+  for (const hour of demandHourEnergy.values()) {
+    const existing = dailyContributions.get(hour.date) ?? 0;
+    dailyContributions.set(
+      hour.date,
+      Math.max(existing, hour.energyKwh),
+    );
+  }
+
+  const matchingDemandPeaks =
+    gridTariffId !== null && demandPeaks?.tariffId === gridTariffId
+      ? demandPeaks
+      : null;
+  const demandImpact = estimatePlannedDemandImpact(
+    matchingDemandPeaks,
+    [...dailyContributions].map(([date, averageKw]) => ({
+      date,
+      averageKw: round(averageKw, 3),
+    })),
+  );
+  const comparisonCost =
+    estimatedCost + (demandImpact.minimumIncrementalDemandCharge ?? 0);
+
   return {
     startsAt: new Date(startMs).toISOString(),
     endsAt: new Date(endMs).toISOString(),
@@ -189,6 +256,7 @@ function buildWindow(
     energyPriceCost: round(energyPriceCost),
     gridTransferCost: round(gridTransferCost),
     estimatedCost: round(estimatedCost),
+    comparisonCost: round(comparisonCost),
     currency,
     grid:
       gridTariffId === null || gridLabel === null
@@ -203,6 +271,7 @@ function buildWindow(
             peakWindowMinutes,
             peakAveragingCount,
             demandChargeIncludedInEstimatedCost: false,
+            demandImpact,
             periods,
           },
   };
@@ -213,6 +282,7 @@ export function buildLoadPlan(
   input: Readonly<{ durationMinutes: number; powerKw: number }>,
   now: Date = new Date(),
   gridTariff: GridTariff | null = null,
+  demandPeaks: DemandPeakReport | null = null,
 ): LoadPlan {
   if (
     !Number.isInteger(input.durationMinutes) ||
@@ -260,7 +330,7 @@ export function buildLoadPlan(
     null;
 
   const best = [...candidates].sort((left, right) => {
-    const cost = left.estimatedCost - right.estimatedCost;
+    const cost = left.comparisonCost - right.comparisonCost;
     if (cost !== 0) return cost;
 
     const demandRate =
@@ -286,11 +356,16 @@ export function buildLoadPlan(
   }
 
   const bestStartsNow = Date.parse(best.startsAt) === nowMs;
-  const savings = round(Math.max(0, immediate.estimatedCost - best.estimatedCost));
-  const meaningfulSaving = Math.max(0.1, Math.abs(immediate.estimatedCost) * 0.1);
+  const savings = round(
+    Math.max(0, immediate.comparisonCost - best.comparisonCost),
+  );
+  const meaningfulSaving = Math.max(
+    0.1,
+    Math.abs(immediate.comparisonCost) * 0.1,
+  );
   const savingsPercent =
-    immediate.estimatedCost > 0
-      ? round((savings / immediate.estimatedCost) * 100, 1)
+    immediate.comparisonCost > 0
+      ? round((savings / immediate.comparisonCost) * 100, 1)
       : null;
 
   if (bestStartsNow) {
