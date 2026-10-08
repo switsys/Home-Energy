@@ -456,49 +456,79 @@ export default async function DashboardPage({
           <section className="section">
             <div className="section-heading">
               <div>
-                <span className="kicker">GRID PEAK HISTORY</span>
+                <span className="kicker">PEAK DEMAND</span>
                 <h2>Falu Elnät effect charge</h2>
               </div>
             </div>
 
-            <div className="peak-grid">
-              <article className="peak-card">
+            {gridPeaks.status === "inactive" ? (
+              <article className="peak-card peak-offseason">
                 <span className="label">CURRENT PERIOD</span>
-                <strong>
-                  {gridPeaks.status === "inactive"
-                    ? "OFF-SEASON"
-                    : gridPeaks.trackedAveragePeakKw === null
-                      ? "NO DATA"
-                      : `${number(gridPeaks.trackedAveragePeakKw, 2)} kW`}
-                </strong>
-                <p>
-                  {gridPeaks.status === "inactive"
-                    ? "No effect charge applies in this billing month."
-                    : `${number(gridPeaks.demandRatePerKwMonth, 0)} SEK/kW · top ${gridPeaks.requiredPeakDays} days`}
-                </p>
-                <small>{gridPeaks.label} · {gridPeaks.billingMonth}</small>
+                <strong>OFF-SEASON</strong>
+                <p>No effect charge applies this month.</p>
+                <small>
+                  Next active period: 1 November · {gridPeaks.label}
+                </small>
               </article>
+            ) : (
+              <>
+                <div className="peak-grid">
+                  <article className="peak-card">
+                    <span className="label">TRACKED TOP-3 AVERAGE</span>
+                    <strong>
+                      {gridPeaks.trackedAveragePeakKw === null
+                        ? "NO DATA"
+                        : `${number(gridPeaks.trackedAveragePeakKw, 2)} kW`}
+                    </strong>
+                    <p>
+                      {number(gridPeaks.demandRatePerKwMonth, 0)} SEK/kW ·{" "}
+                      {gridPeaks.peakDays.length}/{gridPeaks.requiredPeakDays} peak days
+                    </p>
+                    <small>{gridPeaks.label} · {gridPeaks.billingMonth}</small>
+                  </article>
 
-              <article className="peak-card">
-                <span className="label">ESTIMATED EFFECT CHARGE</span>
-                <strong>
-                  {gridPeaks.estimatedDemandCharge === null
-                    ? "—"
-                    : money(
-                        gridPeaks.estimatedDemandCharge,
-                        gridPeaks.currency,
-                      )}
-                </strong>
-                <p>
-                  {gridPeaks.thresholdKw === null
-                    ? gridPeaks.status === "inactive"
-                      ? "Returns when the winter effect period starts."
-                      : `Need ${gridPeaks.requiredPeakDays} eligible days before the estimate is complete.`
-                    : `Current top-3 threshold: ${number(gridPeaks.thresholdKw, 2)} kW`}
-                </p>
-                <small>{gridPeaks.eligibleHours} eligible hourly readings analysed</small>
-              </article>
-            </div>
+                  <article className="peak-card">
+                    <span className="label">ESTIMATED EFFECT CHARGE</span>
+                    <strong>
+                      {gridPeaks.estimatedDemandCharge === null
+                        ? "—"
+                        : money(
+                            gridPeaks.estimatedDemandCharge,
+                            gridPeaks.currency,
+                          )}
+                    </strong>
+                    <p>
+                      {gridPeaks.thresholdKw === null
+                        ? `Need ${gridPeaks.requiredPeakDays} separate peak days before the estimate is complete.`
+                        : `Current top-3 threshold: ${number(gridPeaks.thresholdKw, 2)} kW`}
+                    </p>
+                    <small>
+                      {gridPeaks.eligibleHours} eligible hourly readings analysed
+                    </small>
+                  </article>
+                </div>
+
+                <div className="peak-list">
+                  <div className="peak-list-heading">
+                    <span className="label">HIGHEST HOURLY PEAKS</span>
+                    <small>Highest eligible hour from each day</small>
+                  </div>
+                  {gridPeaks.peakDays.length > 0 ? (
+                    gridPeaks.peakDays.map((peak, index) => (
+                      <div className="peak-row" key={peak.startsAt}>
+                        <span className="peak-rank">{index + 1}</span>
+                        <span>{formatDateTime(peak.startsAt)}</span>
+                        <strong>{number(peak.averageKw, 2)} kW</strong>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="peak-empty">
+                      No eligible hourly readings yet for this billing month.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </section>
         ) : null}
 
