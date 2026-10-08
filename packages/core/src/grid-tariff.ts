@@ -117,8 +117,18 @@ function isSwedishPublicHoliday(
   const midsummerDay = saturdayBetween(year, 6, 20, 26);
   if (month === 6 && day === midsummerDay) return true;
 
-  const allSaintsDay = saturdayBetween(year, 11, 1, 7);
-  return month === 11 && day === allSaintsDay;
+  for (let offset = 0; offset <= 6; offset += 1) {
+    const candidate = addUtcDays(year, 10, 31, offset);
+    if (
+      new Date(
+        Date.UTC(candidate.year, candidate.month - 1, candidate.day),
+      ).getUTCDay() === 6
+    ) {
+      return candidate.month === month && candidate.day === day;
+    }
+  }
+
+  return false;
 }
 
 export const dalaEnergi2026: GridTariff = {
