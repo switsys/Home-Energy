@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLoadPlan, type PriceSchedule, type PriceSlot } from "../src/index.js";
+import { buildLoadPlan, dalaEnergi2026, type PriceSchedule, type PriceSlot } from "../src/index.js";
 
 function price(startsAt: string, total: number): PriceSlot {
   return {
@@ -70,6 +70,37 @@ describe("buildLoadPlan", () => {
     expect(plan.best.estimatedCost).toBe(0.5);
     expect(plan.best.startsAt).toBe("2026-10-07T08:15:00.000Z");
     expect(plan.action).toBe("wait");
+  });
+
+  it("adds the configured grid transfer fee without pretending the monthly demand charge is exact", () => {
+    const prices = [
+      price("2026-10-08T12:00:00+02:00", 1.0),
+      price("2026-10-08T12:15:00+02:00", 1.0),
+      price("2026-10-08T12:30:00+02:00", 1.0),
+      price("2026-10-08T12:45:00+02:00", 1.0),
+    ];
+
+    const plan = buildLoadPlan(
+      schedule(prices),
+      { durationMinutes: 60, powerKw: 2 },
+      new Date("2026-10-08T12:00:00+02:00"),
+      dalaEnergi2026,
+    );
+
+    expect(plan.best).toMatchObject({
+      energyKwh: 2,
+      energyPriceCost: 2,
+      gridTransferCost: 0.18,
+      estimatedCost: 2.18,
+      averagePrice: 1.09,
+    });
+    expect(plan.best.grid).toMatchObject({
+      tariffId: "dala-energi-2026",
+      highestDemandRatePerKwMonth: 35,
+      peakWindowMinutes: 60,
+      peakAveragingCount: 3,
+      demandChargeIncludedInEstimatedCost: false,
+    });
   });
 
   it("rejects invalid load inputs", () => {
