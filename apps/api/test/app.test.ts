@@ -271,6 +271,115 @@ describe("Home-Energy API", () => {
     });
   });
 
+  it("uses current peak history to avoid a definite effect-charge increase", async () => {
+    const today: PriceSchedule["today"] = [
+      ...["10:00", "10:15", "10:30", "10:45"].map((time) => ({
+        total: 0.1,
+        energy: 0.1,
+        tax: 0,
+        startsAt: `2026-11-10T${time}:00+01:00`,
+        currency: "SEK",
+        level: "VERY_CHEAP" as const,
+      })),
+      ...["19:00", "19:15", "19:30", "19:45"].map((time) => ({
+        total: 1,
+        energy: 1,
+        tax: 0,
+        startsAt: `2026-11-10T${time}:00+01:00`,
+        currency: "SEK",
+        level: "NORMAL" as const,
+      })),
+    ];
+    const peakAwareProvider: EnergyProvider = {
+      ...provider,
+      prices: async () => ({
+        provider: "fake",
+        homeId: "home-1",
+        current: today[0],
+        today,
+        tomorrow: [],
+      }),
+      hourlyConsumption: async (homeId) => ({
+        provider: "fake",
+        homeId,
+        samples: [
+          {
+            from: "2026-11-02T09:00:00+01:00",
+            to: "2026-11-02T10:00:00+01:00",
+            consumption: 5,
+            consumptionUnit: "kWh",
+            unitPrice: null,
+            unitPriceVat: null,
+            cost: null,
+            currency: "SEK",
+          },
+          {
+            from: "2026-11-03T09:00:00+01:00",
+            to: "2026-11-03T10:00:00+01:00",
+            consumption: 7,
+            consumptionUnit: "kWh",
+            unitPrice: null,
+            unitPriceVat: null,
+            cost: null,
+            currency: "SEK",
+          },
+          {
+            from: "2026-11-04T09:00:00+01:00",
+            to: "2026-11-04T10:00:00+01:00",
+            consumption: 6,
+            consumptionUnit: "kWh",
+            unitPrice: null,
+            unitPriceVat: null,
+            cost: null,
+            currency: "SEK",
+          },
+        ],
+        count: 3,
+        totalConsumption: 18,
+        totalCost: null,
+        currency: "SEK",
+      }),
+    };
+    const app = buildApp({
+      provider: peakAwareProvider,
+      apiKey: "secret",
+      defaultHomeId: "home-1",
+      gridTariff: faluElnat2026,
+      clock: () => new Date("2026-11-10T10:00:00+01:00"),
+    });
+
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/load-plan?minutes=60&powerKw=8",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      action: "wait",
+      immediate: {
+        comparisonCost: 76.7,
+        grid: {
+          demandImpact: {
+            status: "definite",
+            thresholdKw: 5,
+            minimumIncrementalDemandCharge: 75,
+          },
+        },
+      },
+      best: {
+        startsAt: "2026-11-10T18:00:00.000Z",
+        comparisonCost: 8.9,
+        grid: {
+          demandImpact: {
+            status: "none",
+            minimumIncrementalDemandCharge: 0,
+          },
+        },
+      },
+    });
+  });
+
   it("validates load planner inputs", async () => {
     const app = buildApp({ provider, apiKey: "secret", defaultHomeId: "home-1" });
     const response = await app.inject({
