@@ -205,6 +205,97 @@ export class TibberProvider implements EnergyProvider {
     };
   }
 
+  async hourlyConsumption(
+    homeId: string,
+    hours: number,
+  ): Promise<ConsumptionReport> {
+    if (!Number.isInteger(hours) || hours < 1 || hours > 31 * 24) {
+      throw new RangeError("Tibber hourly consumption supports 1 to 744 hours");
+    }
+
+    const data = await this.query<{
+      viewer: {
+        home: Readonly<{
+          id: string;
+          consumption: Readonly<{
+            nodes:
+              | readonly Readonly<{
+                  from: string;
+                  to: string;
+                  consumption: number | null;
+                  consumptionUnit: string | null;
+                  unitPrice: number | null;
+                  unitPriceVAT: number | null;
+                  cost: number | null;
+                  currency: string | null;
+                }>[]
+              | null;
+            pageInfo: Readonly<{
+              count: number | null;
+              totalConsumption: number | null;
+              totalCost: number | null;
+              currency: string | null;
+            }>;
+          }> | null;
+        }>;
+      };
+    }>(
+      `
+        query HourlyConsumption($homeId: ID!, $hours: Int!) {
+          viewer {
+            home(id: $homeId) {
+              id
+              consumption(
+                resolution: HOURLY
+                last: $hours
+                filterEmptyNodes: true
+              ) {
+                nodes {
+                  from
+                  to
+                  consumption
+                  consumptionUnit
+                  unitPrice
+                  unitPriceVAT
+                  cost
+                  currency
+                }
+                pageInfo {
+                  count
+                  totalConsumption
+                  totalCost
+                  currency
+                }
+              }
+            }
+          }
+        }
+      `,
+      { homeId, hours },
+    );
+
+    const report = data.viewer.home.consumption;
+    return {
+      provider: this.id,
+      homeId: data.viewer.home.id,
+      samples:
+        report?.nodes?.map((node) => ({
+          from: node.from,
+          to: node.to,
+          consumption: node.consumption,
+          consumptionUnit: node.consumptionUnit,
+          unitPrice: node.unitPrice,
+          unitPriceVat: node.unitPriceVAT,
+          cost: node.cost,
+          currency: node.currency,
+        })) ?? [],
+      count: report?.pageInfo.count ?? null,
+      totalConsumption: report?.pageInfo.totalConsumption ?? null,
+      totalCost: report?.pageInfo.totalCost ?? null,
+      currency: report?.pageInfo.currency ?? null,
+    };
+  }
+
   async consumption(homeId: string, days: number): Promise<ConsumptionReport> {
     if (!Number.isInteger(days) || days < 1 || days > 31) {
       throw new RangeError("Tibber daily consumption supports 1 to 31 days");

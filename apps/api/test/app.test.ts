@@ -201,6 +201,76 @@ describe("Home-Energy API", () => {
     });
   });
 
+  it("reports current Falu grid demand peaks from hourly consumption", async () => {
+    const peakProvider: EnergyProvider = {
+      ...provider,
+      hourlyConsumption: async (homeId) => ({
+        provider: "fake",
+        homeId,
+        samples: [
+          {
+            from: "2026-11-02T09:00:00+01:00",
+            to: "2026-11-02T10:00:00+01:00",
+            consumption: 5,
+            consumptionUnit: "kWh",
+            unitPrice: null,
+            unitPriceVat: null,
+            cost: null,
+            currency: "SEK",
+          },
+          {
+            from: "2026-11-03T09:00:00+01:00",
+            to: "2026-11-03T10:00:00+01:00",
+            consumption: 7,
+            consumptionUnit: "kWh",
+            unitPrice: null,
+            unitPriceVat: null,
+            cost: null,
+            currency: "SEK",
+          },
+          {
+            from: "2026-11-04T09:00:00+01:00",
+            to: "2026-11-04T10:00:00+01:00",
+            consumption: 6,
+            consumptionUnit: "kWh",
+            unitPrice: null,
+            unitPriceVat: null,
+            cost: null,
+            currency: "SEK",
+          },
+        ],
+        count: 3,
+        totalConsumption: 18,
+        totalCost: null,
+        currency: "SEK",
+      }),
+    };
+    const app = buildApp({
+      provider: peakProvider,
+      apiKey: "secret",
+      defaultHomeId: "home-1",
+      gridTariff: faluElnat2026,
+      clock: () => new Date("2026-11-10T12:00:00+01:00"),
+    });
+
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/grid-peaks",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      provider: "fake",
+      homeId: "home-1",
+      status: "estimated",
+      trackedAveragePeakKw: 6,
+      thresholdKw: 5,
+      demandRatePerKwMonth: 75,
+      estimatedDemandCharge: 450,
+    });
+  });
+
   it("validates load planner inputs", async () => {
     const app = buildApp({ provider, apiKey: "secret", defaultHomeId: "home-1" });
     const response = await app.inject({

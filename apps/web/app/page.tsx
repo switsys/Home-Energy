@@ -81,6 +81,28 @@ type LoadPlan = Readonly<{
   savingsPercent: number | null;
 }>;
 
+type DemandPeakDay = Readonly<{
+  date: string;
+  startsAt: string;
+  averageKw: number;
+}>;
+
+type DemandPeakReport = Readonly<{
+  tariffId: string;
+  label: string;
+  currency: string;
+  generatedAt: string;
+  billingMonth: string;
+  status: "inactive" | "no_data" | "partial" | "estimated";
+  demandRatePerKwMonth: number;
+  requiredPeakDays: number;
+  eligibleHours: number;
+  peakDays: readonly DemandPeakDay[];
+  trackedAveragePeakKw: number | null;
+  thresholdKw: number | null;
+  estimatedDemandCharge: number | null;
+}>;
+
 type DashboardPageProps = Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>;
@@ -208,6 +230,7 @@ export default async function DashboardPage({
 
   let loadPlan: LoadPlan | null = null;
   let loadPlanError: string | null = null;
+  let gridPeaks: DemandPeakReport | null = null;
 
   try {
     const params = new URLSearchParams({
@@ -218,6 +241,12 @@ export default async function DashboardPage({
   } catch (error) {
     loadPlanError =
       error instanceof Error ? error.message : "Unable to calculate load plan";
+  }
+
+  try {
+    gridPeaks = await api<DemandPeakReport>("/api/energy/grid-peaks");
+  } catch {
+    gridPeaks = null;
   }
 
   const home = homes.find((item) => item.id === advice.homeId);
@@ -422,6 +451,86 @@ export default async function DashboardPage({
             <div className="planner-error">{loadPlanError}</div>
           )}
         </section>
+
+        {gridPeaks ? (
+          <section className="section">
+            <div className="section-heading">
+              <div>
+                <span className="kicker">PEAK DEMAND</span>
+                <h2>Falu Elnät effect charge</h2>
+              </div>
+            </div>
+
+            {gridPeaks.status === "inactive" ? (
+              <article className="peak-card peak-offseason">
+                <span className="label">CURRENT PERIOD</span>
+                <strong>OFF-SEASON</strong>
+                <p>No effect charge applies this month.</p>
+                <small>
+                  Next active period: 1 November · {gridPeaks.label}
+                </small>
+              </article>
+            ) : (
+              <>
+                <div className="peak-grid">
+                  <article className="peak-card">
+                    <span className="label">TRACKED TOP-3 AVERAGE</span>
+                    <strong>
+                      {gridPeaks.trackedAveragePeakKw === null
+                        ? "NO DATA"
+                        : `${number(gridPeaks.trackedAveragePeakKw, 2)} kW`}
+                    </strong>
+                    <p>
+                      {number(gridPeaks.demandRatePerKwMonth, 0)} SEK/kW ·{" "}
+                      {gridPeaks.peakDays.length}/{gridPeaks.requiredPeakDays} peak days
+                    </p>
+                    <small>{gridPeaks.label} · {gridPeaks.billingMonth}</small>
+                  </article>
+
+                  <article className="peak-card">
+                    <span className="label">ESTIMATED EFFECT CHARGE</span>
+                    <strong>
+                      {gridPeaks.estimatedDemandCharge === null
+                        ? "—"
+                        : money(
+                            gridPeaks.estimatedDemandCharge,
+                            gridPeaks.currency,
+                          )}
+                    </strong>
+                    <p>
+                      {gridPeaks.thresholdKw === null
+                        ? `Need ${gridPeaks.requiredPeakDays} separate peak days before the estimate is complete.`
+                        : `Current top-3 threshold: ${number(gridPeaks.thresholdKw, 2)} kW`}
+                    </p>
+                    <small>
+                      {gridPeaks.eligibleHours} eligible hourly readings analysed
+                    </small>
+                  </article>
+                </div>
+
+                <div className="peak-list">
+                  <div className="peak-list-heading">
+                    <span className="label">HIGHEST HOURLY PEAKS</span>
+                    <small>Highest eligible hour from each day</small>
+                  </div>
+                  {gridPeaks.peakDays.length > 0 ? (
+                    gridPeaks.peakDays.map((peak, index) => (
+                      <div className="peak-row" key={peak.startsAt}>
+                        <span className="peak-rank">{index + 1}</span>
+                        <span>{formatDateTime(peak.startsAt)}</span>
+                        <strong>{number(peak.averageKw, 2)} kW</strong>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="peak-empty">
+                      No eligible hourly readings yet for this billing month.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+        ) : null}
 
         <section className="section">
           <div className="section-heading">

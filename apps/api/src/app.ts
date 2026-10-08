@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
+  buildDemandPeakReport,
   buildEnergyAdvice,
   buildLoadPlan,
   resolveGridTariff,
@@ -242,6 +243,46 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
           clock(),
           gridTariff,
         );
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get<{ Querystring: { homeId?: string } }>(
+    "/api/energy/grid-peaks",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      if (gridTariff === null) {
+        return reply.status(503).send({
+          error: "grid_tariff_not_configured",
+        });
+      }
+
+      if (provider === null || provider.hourlyConsumption === undefined) {
+        return reply.status(501).send({
+          error: "hourly_consumption_unsupported",
+        });
+      }
+
+      try {
+        const homeId = await resolveHomeId(request.query.homeId);
+        const now = clock();
+        const emptyReport = buildDemandPeakReport([], gridTariff, now);
+        if (emptyReport.status === "inactive") {
+          return {
+            provider: provider.id,
+            homeId,
+            ...emptyReport,
+          };
+        }
+
+        const report = await provider.hourlyConsumption(homeId, 31 * 24);
+        return {
+          provider: provider.id,
+          homeId,
+          ...buildDemandPeakReport(report.samples, gridTariff, now),
+        };
       } catch (error) {
         return unavailable(reply, error);
       }
