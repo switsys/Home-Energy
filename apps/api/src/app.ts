@@ -267,11 +267,21 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
       try {
         const homeId = await resolveHomeId(request.query.homeId);
+        const now = clock();
+        const emptyReport = buildDemandPeakReport([], gridTariff, now);
+        if (emptyReport.status === "inactive") {
+          return {
+            provider: provider.id,
+            homeId,
+            ...emptyReport,
+          };
+        }
+
         const report = await provider.hourlyConsumption(homeId, 31 * 24);
         return {
           provider: provider.id,
           homeId,
-          ...buildDemandPeakReport(report.samples, gridTariff, clock()),
+          ...buildDemandPeakReport(report.samples, gridTariff, now),
         };
       } catch (error) {
         return unavailable(reply, error);
