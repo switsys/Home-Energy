@@ -258,9 +258,8 @@ export function estimatePlannedDemandImpact(
 
   if (
     plannedDailyPeaks.length === 0 ||
-    report === null ||
-    report.status === "inactive" ||
-    report.demandRatePerKwMonth <= 0
+    (report !== null &&
+      (report.status === "inactive" || report.demandRatePerKwMonth <= 0))
   ) {
     return {
       status: "none",
@@ -270,6 +269,18 @@ export function estimatePlannedDemandImpact(
       projectedMinimumDemandCharge: report?.estimatedDemandCharge ?? null,
       minimumIncrementalDemandCharge: 0,
       demandRatePerKwMonth: report?.demandRatePerKwMonth ?? 0,
+    };
+  }
+
+  if (report === null) {
+    return {
+      status: "unknown",
+      thresholdKw: null,
+      plannedPeakContributionKw,
+      currentEstimatedDemandCharge: null,
+      projectedMinimumDemandCharge: null,
+      minimumIncrementalDemandCharge: null,
+      demandRatePerKwMonth: 0,
     };
   }
 
