@@ -131,29 +131,33 @@ function isSwedishPublicHoliday(
   return false;
 }
 
-export const dalaEnergi2026: GridTariff = {
-  id: "dala-energi-2026",
-  label: "Dala Energi 2026",
+export const faluElnat2026: GridTariff = {
+  id: "falu-elnat-2026",
+  label: "Falu Elnät 2026",
 
   quote(at: Date): GridTariffQuote {
     const local = stockholmParts(at);
     const weekend = local.weekday === "Sat" || local.weekday === "Sun";
     const holiday = isSwedishPublicHoliday(local.year, local.month, local.day);
+    const excludedEve =
+      (local.month === 12 && local.day === 24) ||
+      (local.month === 12 && local.day === 31);
     const highHours = local.hour >= 7 && local.hour < 19;
+    const winter = local.month >= 11 || local.month <= 3;
     const loadPeriod: GridLoadPeriod =
-      !weekend && !holiday && highHours ? "high" : "low";
-    const season: GridSeason =
-      local.month >= 11 || local.month <= 3 ? "winter" : "summer";
+      winter && !weekend && !holiday && !excludedEve && highHours
+        ? "high"
+        : "low";
+    const season: GridSeason = winter ? "winter" : "summer";
 
     return {
       tariffId: this.id,
       label: this.label,
       currency: "SEK",
-      transferPerKwh: 0.09,
+      transferPerKwh: 0.1125,
       loadPeriod,
       season,
-      demandRatePerKwMonth:
-        loadPeriod === "high" && season === "winter" ? 105 : 35,
+      demandRatePerKwMonth: loadPeriod === "high" ? 75 : 0,
       peakWindowMinutes: 60,
       peakAveragingCount: 3,
     };
@@ -167,11 +171,11 @@ export function resolveGridTariff(
   if (normalized === "") return null;
 
   if (
-    normalized === dalaEnergi2026.id ||
-    normalized === "dalaenergi-2026" ||
-    normalized === "dala-energi"
+    normalized === faluElnat2026.id ||
+    normalized === "falu-elnat" ||
+    normalized === "falu-energi-vatten"
   ) {
-    return dalaEnergi2026;
+    return faluElnat2026;
   }
 
   throw new Error(`Unknown grid tariff: ${id}`);
