@@ -30,6 +30,10 @@ describe("Dala Energi 2026 tariff", () => {
     expect(
       dalaEnergi2026.quote(new Date("2026-12-25T12:00:00+01:00")).loadPeriod,
     ).toBe("low");
+
+    expect(
+      dalaEnergi2026.quote(new Date("2026-10-31T12:00:00+01:00")).loadPeriod,
+    ).toBe("low");
   });
 
   it("uses the summer rate during April through October", () => {
