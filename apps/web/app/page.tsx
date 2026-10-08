@@ -48,6 +48,16 @@ type Consumption = Readonly<{
   currency: string | null;
 }>;
 
+type LoadPlanGridSummary = Readonly<{
+  tariffId: string;
+  label: string;
+  transferCost: number;
+  highestDemandRatePerKwMonth: number;
+  peakWindowMinutes: number;
+  peakAveragingCount: number;
+  demandChargeIncludedInEstimatedCost: false;
+}>;
+
 type LoadPlanWindow = Readonly<{
   startsAt: string;
   endsAt: string;
@@ -55,8 +65,11 @@ type LoadPlanWindow = Readonly<{
   powerKw: number;
   energyKwh: number;
   averagePrice: number;
+  energyPriceCost: number;
+  gridTransferCost: number;
   estimatedCost: number;
   currency: string;
+  grid: LoadPlanGridSummary | null;
 }>;
 
 type LoadPlan = Readonly<{
@@ -251,7 +264,7 @@ export default async function DashboardPage({
 
         <section className="hero-grid">
           <article className="card current-card">
-            <span className="label">CURRENT PRICE</span>
+            <span className="label">CURRENT ENERGY PRICE</span>
             <div className="price">
               {advice.current
                 ? money(advice.current.total, advice.current.currency)
@@ -349,10 +362,25 @@ export default async function DashboardPage({
                   {money(loadPlan.best.estimatedCost, loadPlan.best.currency)}
                 </p>
                 <small>
-                  {number(loadPlan.best.energyKwh, 2)} kWh estimated at{" "}
+                  {number(loadPlan.best.energyKwh, 2)} kWh ·{" "}
                   {money(loadPlan.best.averagePrice, loadPlan.best.currency)}
-                  /kWh
+                  /kWh variable cost
                 </small>
+                {loadPlan.best.grid ? (
+                  <small>
+                    {loadPlan.best.grid.label}:{" "}
+                    {money(
+                      loadPlan.best.grid.transferCost,
+                      loadPlan.best.currency,
+                    )}{" "}
+                    grid transfer included · peak tariff up to{" "}
+                    {number(
+                      loadPlan.best.grid.highestDemandRatePerKwMonth,
+                      0,
+                    )}{" "}
+                    SEK/kW/month not yet included
+                  </small>
+                ) : null}
               </article>
 
               <article className="planner-result">
@@ -378,6 +406,16 @@ export default async function DashboardPage({
                     ? `${plannerMinutes} min · ${number(plannerPowerKw, 1)} kW`
                     : `${number(loadPlan.savingsPercent, 1)}% cheaper at the best start`}
                 </small>
+                {loadPlan.immediate?.grid ? (
+                  <small>
+                    Current peak-tariff band: up to{" "}
+                    {number(
+                      loadPlan.immediate.grid.highestDemandRatePerKwMonth,
+                      0,
+                    )}{" "}
+                    SEK/kW/month
+                  </small>
+                ) : null}
               </article>
             </div>
           ) : (
