@@ -1,7 +1,10 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
   buildEnergyAdvice,
+  buildLoadPlan,
+  resolveGridTariff,
   type EnergyProvider,
+  type GridTariff,
   type PriceSchedule,
   type PriceSlot,
 } from "@home-energy/core";
@@ -23,6 +26,7 @@ export type AppOptions = Readonly<{
   clock?: () => Date;
   apiKey?: string | null;
   defaultHomeId?: string | null;
+  gridTariff?: GridTariff | null;
 }>;
 
 function configured(value: string | null | undefined): string | null {
@@ -108,6 +112,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       ? configured(process.env.HOME_ENERGY_HOME_ID) ??
         configured(process.env.TIBBER_HOME_ID)
       : configured(options.defaultHomeId);
+  const gridTariff =
+    options.gridTariff === undefined
+      ? resolveGridTariff(configured(process.env.HOME_ENERGY_GRID_TARIFF))
+      : options.gridTariff;
   const requireAccess = accessGuard(apiKey);
 
   let homesCache: TimedCache<Awaited<ReturnType<EnergyProvider["homes"]>>> | null =
@@ -163,6 +171,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     configured: provider !== null,
     protected: apiKey !== null,
     provider: provider?.id ?? null,
+    gridTariff: gridTariff?.id ?? null,
   }));
 
   app.get(
@@ -197,6 +206,42 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       try {
         const homeId = await resolveHomeId(request.query.homeId);
         return buildEnergyAdvice(await prices(homeId), clock());
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get<{
+    Querystring: { homeId?: string; minutes?: string; powerKw?: string };
+  }>(
+    "/api/energy/load-plan",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      const minutes = Number(request.query.minutes);
+      if (!Number.isInteger(minutes) || minutes < 15 || minutes > 24 * 60) {
+        return reply.status(400).send({
+          error: "invalid_minutes",
+          message: "minutes must be an integer from 15 to 1440",
+        });
+      }
+
+      const powerKw = Number(request.query.powerKw);
+      if (!Number.isFinite(powerKw) || powerKw <= 0 || powerKw > 100) {
+        return reply.status(400).send({
+          error: "invalid_power_kw",
+          message: "powerKw must be greater than 0 and no more than 100",
+        });
+      }
+
+      try {
+        const homeId = await resolveHomeId(request.query.homeId);
+        return buildLoadPlan(
+          await prices(homeId),
+          { durationMinutes: minutes, powerKw },
+          clock(),
+          gridTariff,
+        );
       } catch (error) {
         return unavailable(reply, error);
       }
