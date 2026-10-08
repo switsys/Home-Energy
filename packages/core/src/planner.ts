@@ -1,9 +1,32 @@
 import type { PriceSchedule, PriceSlot } from "./contracts.js";
+import type {
+  GridLoadPeriod,
+  GridSeason,
+  GridTariff,
+} from "./grid-tariff.js";
 
 const SLOT_MS = 15 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
 export type LoadPlanAction = "run_now" | "wait";
+
+export type LoadPlanGridPeriod = Readonly<{
+  loadPeriod: GridLoadPeriod;
+  season: GridSeason;
+  minutes: number;
+  demandRatePerKwMonth: number;
+}>;
+
+export type LoadPlanGridSummary = Readonly<{
+  tariffId: string;
+  label: string;
+  transferCost: number;
+  highestDemandRatePerKwMonth: number;
+  peakWindowMinutes: number;
+  peakAveragingCount: number;
+  demandChargeIncludedInEstimatedCost: false;
+  periods: readonly LoadPlanGridPeriod[];
+}>;
 
 export type LoadPlanWindow = Readonly<{
   startsAt: string;
@@ -12,8 +35,11 @@ export type LoadPlanWindow = Readonly<{
   powerKw: number;
   energyKwh: number;
   averagePrice: number;
+  energyPriceCost: number;
+  gridTransferCost: number;
   estimatedCost: number;
   currency: string;
+  grid: LoadPlanGridSummary | null;
 }>;
 
 export type LoadPlan = Readonly<{
@@ -76,11 +102,26 @@ function buildWindow(
   startMs: number,
   durationMinutes: number,
   powerKw: number,
+  gridTariff: GridTariff | null,
 ): LoadPlanWindow | null {
   const endMs = startMs + durationMinutes * 60_000;
   let cursor = startMs;
-  let cost = 0;
+  let energyPriceCost = 0;
+  let gridTransferCost = 0;
   let currency: string | null = null;
+  let gridLabel: string | null = null;
+  let gridTariffId: string | null = null;
+  let peakWindowMinutes = 0;
+  let peakAveragingCount = 0;
+  const gridPeriods = new Map<
+    string,
+    {
+      loadPeriod: GridLoadPeriod;
+      season: GridSeason;
+      minutes: number;
+      demandRatePerKwMonth: number;
+    }
+  >();
 
   for (const slot of slots) {
     const slotEndMs = slot.startsAtMs + SLOT_MS;
@@ -97,7 +138,33 @@ function buildWindow(
     if (overlapEnd <= overlapStart) continue;
 
     const overlapHours = (overlapEnd - overlapStart) / HOUR_MS;
-    cost += slot.total * powerKw * overlapHours;
+    energyPriceCost += slot.total * powerKw * overlapHours;
+
+    if (gridTariff !== null) {
+      const quote = gridTariff.quote(new Date(overlapStart));
+      if (quote.currency !== currency) {
+        throw new Error(
+          `Grid tariff currency ${quote.currency} does not match energy price currency ${currency}`,
+        );
+      }
+
+      gridTransferCost += quote.transferPerKwh * powerKw * overlapHours;
+      gridLabel = quote.label;
+      gridTariffId = quote.tariffId;
+      peakWindowMinutes = quote.peakWindowMinutes;
+      peakAveragingCount = quote.peakAveragingCount;
+
+      const key = `${quote.loadPeriod}:${quote.season}:${quote.demandRatePerKwMonth}`;
+      const current = gridPeriods.get(key);
+      const overlapMinutes = (overlapEnd - overlapStart) / 60_000;
+      gridPeriods.set(key, {
+        loadPeriod: quote.loadPeriod,
+        season: quote.season,
+        minutes: (current?.minutes ?? 0) + overlapMinutes,
+        demandRatePerKwMonth: quote.demandRatePerKwMonth,
+      });
+    }
+
     cursor = overlapEnd;
 
     if (cursor >= endMs) break;
@@ -106,15 +173,38 @@ function buildWindow(
   if (cursor < endMs || currency === null) return null;
 
   const energyKwh = powerKw * (durationMinutes / 60);
+  const estimatedCost = energyPriceCost + gridTransferCost;
+  const periods = [...gridPeriods.values()].map((period) => ({
+    ...period,
+    minutes: round(period.minutes, 1),
+  }));
+
   return {
     startsAt: new Date(startMs).toISOString(),
     endsAt: new Date(endMs).toISOString(),
     durationMinutes,
     powerKw: round(powerKw, 3),
     energyKwh: round(energyKwh, 3),
-    averagePrice: round(cost / energyKwh),
-    estimatedCost: round(cost),
+    averagePrice: round(estimatedCost / energyKwh),
+    energyPriceCost: round(energyPriceCost),
+    gridTransferCost: round(gridTransferCost),
+    estimatedCost: round(estimatedCost),
     currency,
+    grid:
+      gridTariffId === null || gridLabel === null
+        ? null
+        : {
+            tariffId: gridTariffId,
+            label: gridLabel,
+            transferCost: round(gridTransferCost),
+            highestDemandRatePerKwMonth: Math.max(
+              ...periods.map((period) => period.demandRatePerKwMonth),
+            ),
+            peakWindowMinutes,
+            peakAveragingCount,
+            demandChargeIncludedInEstimatedCost: false,
+            periods,
+          },
   };
 }
 
@@ -122,6 +212,7 @@ export function buildLoadPlan(
   schedule: PriceSchedule,
   input: Readonly<{ durationMinutes: number; powerKw: number }>,
   now: Date = new Date(),
+  gridTariff: GridTariff | null = null,
 ): LoadPlan {
   if (
     !Number.isInteger(input.durationMinutes) ||
@@ -150,7 +241,13 @@ export function buildLoadPlan(
 
   const candidates = starts
     .map((startsAtMs) =>
-      buildWindow(slots, startsAtMs, input.durationMinutes, input.powerKw),
+      buildWindow(
+        slots,
+        startsAtMs,
+        input.durationMinutes,
+        input.powerKw,
+        gridTariff,
+      ),
     )
     .filter((window): window is LoadPlanWindow => window !== null);
 
@@ -165,6 +262,12 @@ export function buildLoadPlan(
   const best = [...candidates].sort((left, right) => {
     const cost = left.estimatedCost - right.estimatedCost;
     if (cost !== 0) return cost;
+
+    const demandRate =
+      (left.grid?.highestDemandRatePerKwMonth ?? 0) -
+      (right.grid?.highestDemandRatePerKwMonth ?? 0);
+    if (demandRate !== 0) return demandRate;
+
     return Date.parse(left.startsAt) - Date.parse(right.startsAt);
   })[0];
 
