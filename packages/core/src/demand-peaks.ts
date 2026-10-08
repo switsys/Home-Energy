@@ -32,6 +32,23 @@ export type DemandPeakReport = Readonly<{
   estimatedDemandCharge: number | null;
 }>;
 
+export type DemandImpactStatus = "none" | "unknown" | "possible" | "definite";
+
+export type PlannedDemandDay = Readonly<{
+  date: string;
+  averageKw: number;
+}>;
+
+export type PlannedDemandImpact = Readonly<{
+  status: DemandImpactStatus;
+  thresholdKw: number | null;
+  plannedPeakContributionKw: number;
+  currentEstimatedDemandCharge: number | null;
+  projectedMinimumDemandCharge: number | null;
+  minimumIncrementalDemandCharge: number | null;
+  demandRatePerKwMonth: number;
+}>;
+
 type LocalParts = Readonly<{
   year: number;
   month: number;
@@ -224,5 +241,143 @@ export function buildDemandPeakReport(
     estimatedDemandCharge: complete
       ? round(trackedAveragePeakKw * settings.rate, 2)
       : null,
+  };
+}
+
+
+export function estimatePlannedDemandImpact(
+  report: DemandPeakReport | null,
+  plannedDailyPeaks: readonly PlannedDemandDay[],
+): PlannedDemandImpact {
+  const plannedPeakContributionKw =
+    plannedDailyPeaks.length === 0
+      ? 0
+      : round(
+          Math.max(...plannedDailyPeaks.map((peak) => peak.averageKw)),
+        );
+
+  if (plannedDailyPeaks.length === 0) {
+    return {
+      status: "none",
+      thresholdKw: report?.thresholdKw ?? null,
+      plannedPeakContributionKw,
+      currentEstimatedDemandCharge: report?.estimatedDemandCharge ?? null,
+      projectedMinimumDemandCharge: report?.estimatedDemandCharge ?? null,
+      minimumIncrementalDemandCharge: 0,
+      demandRatePerKwMonth: report?.demandRatePerKwMonth ?? 0,
+    };
+  }
+
+  if (report === null) {
+    return {
+      status: "unknown",
+      thresholdKw: null,
+      plannedPeakContributionKw,
+      currentEstimatedDemandCharge: null,
+      projectedMinimumDemandCharge: null,
+      minimumIncrementalDemandCharge: null,
+      demandRatePerKwMonth: 0,
+    };
+  }
+
+  const planningMonths = new Set(
+    plannedDailyPeaks.map((peak) => peak.date.slice(0, 7)),
+  );
+  const sameBillingMonth =
+    planningMonths.size === 1 && planningMonths.has(report.billingMonth);
+
+  if (!sameBillingMonth) {
+    return {
+      status: "unknown",
+      thresholdKw: null,
+      plannedPeakContributionKw,
+      currentEstimatedDemandCharge: null,
+      projectedMinimumDemandCharge: null,
+      minimumIncrementalDemandCharge: null,
+      demandRatePerKwMonth: report.demandRatePerKwMonth,
+    };
+  }
+
+  if (report.status === "inactive" || report.demandRatePerKwMonth <= 0) {
+    return {
+      status: "none",
+      thresholdKw: report.thresholdKw,
+      plannedPeakContributionKw,
+      currentEstimatedDemandCharge: report.estimatedDemandCharge,
+      projectedMinimumDemandCharge: report.estimatedDemandCharge,
+      minimumIncrementalDemandCharge: 0,
+      demandRatePerKwMonth: report.demandRatePerKwMonth,
+    };
+  }
+
+  if (
+    report.status !== "estimated" ||
+    report.thresholdKw === null ||
+    report.estimatedDemandCharge === null ||
+    report.peakDays.length < report.requiredPeakDays
+  ) {
+    return {
+      status: "unknown",
+      thresholdKw: report.thresholdKw,
+      plannedPeakContributionKw,
+      currentEstimatedDemandCharge: report.estimatedDemandCharge,
+      projectedMinimumDemandCharge: null,
+      minimumIncrementalDemandCharge: null,
+      demandRatePerKwMonth: report.demandRatePerKwMonth,
+    };
+  }
+
+  const projectedDailyPeaks = new Map<string, number>();
+  for (const peak of report.peakDays) {
+    projectedDailyPeaks.set(peak.date, peak.averageKw);
+  }
+
+  for (const planned of plannedDailyPeaks) {
+    const existing = projectedDailyPeaks.get(planned.date) ?? 0;
+    projectedDailyPeaks.set(
+      planned.date,
+      Math.max(existing, planned.averageKw),
+    );
+  }
+
+  const top = [...projectedDailyPeaks.values()]
+    .sort((left, right) => right - left)
+    .slice(0, report.requiredPeakDays);
+
+  if (top.length < report.requiredPeakDays) {
+    return {
+      status: "unknown",
+      thresholdKw: report.thresholdKw,
+      plannedPeakContributionKw,
+      currentEstimatedDemandCharge: report.estimatedDemandCharge,
+      projectedMinimumDemandCharge: null,
+      minimumIncrementalDemandCharge: null,
+      demandRatePerKwMonth: report.demandRatePerKwMonth,
+    };
+  }
+
+  const projectedAverageKw =
+    top.reduce((sum, value) => sum + value, 0) / top.length;
+  const projectedMinimumDemandCharge = round(
+    projectedAverageKw * report.demandRatePerKwMonth,
+    2,
+  );
+  const minimumIncrementalDemandCharge = round(
+    Math.max(
+      0,
+      projectedMinimumDemandCharge - report.estimatedDemandCharge,
+    ),
+    2,
+  );
+
+  return {
+    status:
+      minimumIncrementalDemandCharge > 0 ? "definite" : "possible",
+    thresholdKw: report.thresholdKw,
+    plannedPeakContributionKw,
+    currentEstimatedDemandCharge: report.estimatedDemandCharge,
+    projectedMinimumDemandCharge,
+    minimumIncrementalDemandCharge,
+    demandRatePerKwMonth: report.demandRatePerKwMonth,
   };
 }

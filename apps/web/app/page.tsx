@@ -48,6 +48,16 @@ type Consumption = Readonly<{
   currency: string | null;
 }>;
 
+type LoadPlanDemandImpact = Readonly<{
+  status: "none" | "unknown" | "possible" | "definite";
+  thresholdKw: number | null;
+  plannedPeakContributionKw: number;
+  currentEstimatedDemandCharge: number | null;
+  projectedMinimumDemandCharge: number | null;
+  minimumIncrementalDemandCharge: number | null;
+  demandRatePerKwMonth: number;
+}>;
+
 type LoadPlanGridSummary = Readonly<{
   tariffId: string;
   label: string;
@@ -56,6 +66,7 @@ type LoadPlanGridSummary = Readonly<{
   peakWindowMinutes: number;
   peakAveragingCount: number;
   demandChargeIncludedInEstimatedCost: false;
+  demandImpact: LoadPlanDemandImpact;
 }>;
 
 type LoadPlanWindow = Readonly<{
@@ -68,6 +79,7 @@ type LoadPlanWindow = Readonly<{
   energyPriceCost: number;
   gridTransferCost: number;
   estimatedCost: number;
+  comparisonCost: number;
   currency: string;
   grid: LoadPlanGridSummary | null;
 }>;
@@ -141,6 +153,30 @@ function number(value: number, digits = 1): string {
     maximumFractionDigits: digits,
     minimumFractionDigits: digits,
   }).format(value);
+}
+
+function demandImpactText(window: LoadPlanWindow | null): string | null {
+  const impact = window?.grid?.demandImpact;
+  if (!impact || impact.status === "none") return null;
+
+  if (
+    impact.status === "definite" &&
+    impact.minimumIncrementalDemandCharge !== null
+  ) {
+    return `Peak-demand impact: at least ${money(
+      impact.minimumIncrementalDemandCharge,
+      window?.currency ?? "SEK",
+    )} additional monthly effect charge.`;
+  }
+
+  if (impact.status === "possible" && impact.thresholdKw !== null) {
+    return `Peak-demand window: current top-3 threshold is ${number(
+      impact.thresholdKw,
+      2,
+    )} kW; household baseline load could still increase the effect charge.`;
+  }
+
+  return "Peak-demand window: effect-charge impact is unknown until enough hourly history is available.";
 }
 
 async function api<T>(path: string): Promise<T> {
@@ -407,8 +443,11 @@ export default async function DashboardPage({
                       loadPlan.best.grid.highestDemandRatePerKwMonth,
                       0,
                     )}{" "}
-                    SEK/kW/month not yet included
+                    SEK/kW/month excluded from the displayed variable cost
                   </small>
+                ) : null}
+                {demandImpactText(loadPlan.best) ? (
+                  <small>{demandImpactText(loadPlan.best)}</small>
                 ) : null}
               </article>
 
@@ -425,7 +464,7 @@ export default async function DashboardPage({
                 <p>
                   {loadPlan.savings === null
                     ? "Immediate comparison unavailable."
-                    : `Potential saving: ${money(
+                    : `Planning saving: ${money(
                         loadPlan.savings,
                         loadPlan.best.currency,
                       )}`}
@@ -444,6 +483,9 @@ export default async function DashboardPage({
                     )}{" "}
                     SEK/kW/month
                   </small>
+                ) : null}
+                {demandImpactText(loadPlan.immediate) ? (
+                  <small>{demandImpactText(loadPlan.immediate)}</small>
                 ) : null}
               </article>
             </div>

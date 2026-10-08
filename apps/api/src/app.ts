@@ -4,6 +4,7 @@ import {
   buildEnergyAdvice,
   buildLoadPlan,
   resolveGridTariff,
+  type DemandPeakReport,
   type EnergyProvider,
   type GridTariff,
   type PriceSchedule,
@@ -168,6 +169,27 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     });
   }
 
+  async function peakReportForPlanning(
+    homeId: string,
+  ): Promise<DemandPeakReport | null> {
+    if (gridTariff === null) return null;
+
+    const now = clock();
+    const emptyReport = buildDemandPeakReport([], gridTariff, now);
+    if (emptyReport.status === "inactive") return emptyReport;
+
+    if (provider === null || provider.hourlyConsumption === undefined) {
+      return null;
+    }
+
+    try {
+      const report = await provider.hourlyConsumption(homeId, 31 * 24);
+      return buildDemandPeakReport(report.samples, gridTariff, now);
+    } catch {
+      return null;
+    }
+  }
+
   app.get("/api/energy/status", async () => ({
     configured: provider !== null,
     protected: apiKey !== null,
@@ -237,11 +259,13 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
       try {
         const homeId = await resolveHomeId(request.query.homeId);
+        const peakReport = await peakReportForPlanning(homeId);
         return buildLoadPlan(
           await prices(homeId),
           { durationMinutes: minutes, powerKw },
           clock(),
           gridTariff,
+          peakReport,
         );
       } catch (error) {
         return unavailable(reply, error);
