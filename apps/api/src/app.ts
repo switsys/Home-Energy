@@ -414,6 +414,49 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   );
 
   app.get<{ Querystring: { homeId?: string } }>(
+    "/api/energy/grid-schedule",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      if (gridTariff === null) {
+        return reply.status(503).send({
+          error: "grid_tariff_not_configured",
+        });
+      }
+
+      try {
+        const homeId = await resolveHomeId(request.query.homeId);
+        const schedule = await prices(homeId);
+        const quoteSlots = (slots: readonly PriceSlot[]) =>
+          slots.flatMap((slot) => {
+            if (slot.startsAt === null) return [];
+            const startsAt = new Date(slot.startsAt);
+            if (!Number.isFinite(startsAt.getTime())) return [];
+            const quote = gridTariff.quote(startsAt);
+            return [
+              {
+                startsAt: slot.startsAt,
+                loadPeriod: quote.loadPeriod,
+                season: quote.season,
+                demandRatePerKwMonth: quote.demandRatePerKwMonth,
+              },
+            ];
+          });
+
+        return {
+          provider: provider?.id ?? null,
+          homeId,
+          tariffId: gridTariff.id,
+          label: gridTariff.label,
+          today: quoteSlots(schedule.today),
+          tomorrow: quoteSlots(schedule.tomorrow),
+        };
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get<{ Querystring: { homeId?: string } }>(
     "/api/energy/advice",
     { preHandler: requireAccess },
     async (request, reply) => {

@@ -872,3 +872,20 @@ footer {
     margin-left: 0;
   }
 }
+
+
+.price-peak-band {
+  fill: var(--amber);
+  opacity: .075;
+}
+
+.price-dot.peak-risk {
+  width: 11px;
+  border-radius: 2px;
+  background: var(--amber);
+  opacity: .65;
+}
+
+.price-peak-inactive {
+  color: #718078;
+}

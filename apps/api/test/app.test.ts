@@ -209,6 +209,95 @@ describe("Home-Energy API", () => {
     });
   });
 
+  it("reports high-demand tariff windows for the price chart", async () => {
+    const today: PriceSchedule["today"] = [
+      {
+        total: 1,
+        energy: 1,
+        tax: 0,
+        startsAt: "2026-11-10T06:45:00+01:00",
+        currency: "SEK",
+        level: "NORMAL",
+      },
+      {
+        total: 1,
+        energy: 1,
+        tax: 0,
+        startsAt: "2026-11-10T07:00:00+01:00",
+        currency: "SEK",
+        level: "NORMAL",
+      },
+      {
+        total: 1,
+        energy: 1,
+        tax: 0,
+        startsAt: "2026-11-10T18:45:00+01:00",
+        currency: "SEK",
+        level: "NORMAL",
+      },
+      {
+        total: 1,
+        energy: 1,
+        tax: 0,
+        startsAt: "2026-11-10T19:00:00+01:00",
+        currency: "SEK",
+        level: "NORMAL",
+      },
+    ];
+    const tariffProvider: EnergyProvider = {
+      ...provider,
+      prices: async () => ({
+        provider: "fake",
+        homeId: "home-1",
+        current: today[1],
+        today,
+        tomorrow: [],
+      }),
+    };
+    const app = buildApp({
+      provider: tariffProvider,
+      apiKey: "secret",
+      defaultHomeId: "home-1",
+      gridTariff: faluElnat2026,
+      clock: () => new Date("2026-11-10T08:00:00+01:00"),
+    });
+
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/grid-schedule",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      provider: "fake",
+      homeId: "home-1",
+      tariffId: "falu-elnat-2026",
+      today: [
+        {
+          startsAt: "2026-11-10T06:45:00+01:00",
+          loadPeriod: "low",
+          demandRatePerKwMonth: 0,
+        },
+        {
+          startsAt: "2026-11-10T07:00:00+01:00",
+          loadPeriod: "high",
+          demandRatePerKwMonth: 75,
+        },
+        {
+          startsAt: "2026-11-10T18:45:00+01:00",
+          loadPeriod: "high",
+          demandRatePerKwMonth: 75,
+        },
+        {
+          startsAt: "2026-11-10T19:00:00+01:00",
+          loadPeriod: "low",
+          demandRatePerKwMonth: 0,
+        },
+      ],
+    });
+  });
+
   it("reports current Falu grid demand peaks from hourly consumption", async () => {
     const peakProvider: EnergyProvider = {
       ...provider,
