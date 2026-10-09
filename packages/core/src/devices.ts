@@ -11,7 +11,9 @@ export type EnergyDevicePowerState = "on" | "off" | "unknown";
 
 export type EnergyDevice = Readonly<{
   id: string;
-  homeId: string;
+  propertyId: string;
+  gridConnectionId: string | null;
+  providerScopeId: string | null;
   name: string;
   kind: EnergyDeviceKind;
   controllable: boolean;
@@ -21,9 +23,9 @@ export type EnergyDevice = Readonly<{
 
 export interface EnergyDeviceProvider {
   readonly id: string;
-  devices(homeId: string): Promise<readonly EnergyDevice[]>;
+  devices(propertyId: string): Promise<readonly EnergyDevice[]>;
   setPower?(
-    homeId: string,
+    propertyId: string,
     deviceId: string,
     on: boolean,
   ): Promise<EnergyDevice>;
