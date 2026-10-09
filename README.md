@@ -40,6 +40,7 @@ Copy `.env.example` to `.env` and set:
 - `HOME_ENERGY_API_KEY`
 - `HOME_ENERGY_API_URL` for the dashboard (defaults to `http://127.0.0.1:3002`)
 - `HOME_ENERGY_GRID_TARIFF=falu-elnat-2026` to enable the current Falu Elnät grid model
+- `HOME_ENERGY_PROPERTY_ID` and `HOME_ENERGY_PROPERTY_NAME` to give multiple provider homes one property identity
 
 The dashboard reads the API key server-side and does not expose it to the browser.
 
@@ -62,12 +63,17 @@ PORT=3002 node --env-file=.env apps/api/dist/server.js
 Endpoints:
 
 - `GET /api/energy/status`
+- `GET /api/energy/property`
+- `GET /api/energy/property/consumption?days=7`
+- `GET /api/energy/property/grid-peaks`
 - `GET /api/energy/homes`
 - `GET /api/energy/prices`
 - `GET /api/energy/advice`
 - `GET /api/energy/consumption`
 - `GET /api/energy/load-plan?minutes=120&powerKw=1.5`
 - `GET /api/energy/grid-peaks`
+- `GET /api/energy/devices`
+- `POST /api/energy/automation/preview`
 
 ## Dashboard
 
@@ -93,6 +99,10 @@ The dashboard is designed to run separately from the API, typically on port 3003
 - Includes Falu Elnät variable grid-transfer cost in load planning.
 - Models the winter effect-tariff period separately instead of pretending it is a per-kWh fee.
 - Reads hourly consumption history and tracks the three peak-demand days used by the Falu Elnät effect-charge model.
+- Keeps separate peak-demand billing scopes for properties with multiple grid inlets instead of merging their peaks.
+- Groups multiple provider homes into one Home-Energy property and aggregates property-wide consumption while preserving each connection.
+- Maps devices to the grid connection that actually powers them before calculating automation windows.
+- Produces approval-gated device automation previews without executing physical control yet.
 - Keeps account credentials on the server side; the browser never receives the Home-Energy API key.
 
-The next development line focuses on making load planning peak-aware, then attaching real device control and automation to the same provider-neutral core.
+The next development line connects device adapters, starting with Google Home as a companion control surface, while keeping Home-Energy responsible for energy decisions and grid-aware scheduling.
