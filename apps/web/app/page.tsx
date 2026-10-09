@@ -275,7 +275,7 @@ function priceCurve(
       (slot) =>
         `L ${xForTime(Date.parse(slot.startsAt))} ${yFor(slot.total)}`,
     ),
-    `L ${xForTime(lastStartsAtMs)} ${baselineY}`,
+    `L ${xForTime(domainEndMs)} ${baselineY}`,
     "Z",
   ].join(" ");
   const currentStartsAtMs =
@@ -286,14 +286,15 @@ function priceCurve(
       )
     : -1;
   const tickHours = ["00", "06", "12", "18"] as const;
-  const timeTicks = tickHours.flatMap((label) => {
+  const timeTicks: Array<{ label: string; x: number }> =
+    tickHours.flatMap((label) => {
     const slot = values.find(
       (value) => formatTime(value.startsAt) === `${label}:00`,
     );
-    return slot
-      ? [{ label, x: xForTime(Date.parse(slot.startsAt)) }]
-      : [];
-  });
+      return slot
+        ? [{ label, x: xForTime(Date.parse(slot.startsAt)) }]
+        : [];
+    });
   if (formatTime(values[values.length - 1]!.startsAt) === "23:45") {
     timeTicks.push({ label: "24", x: xForTime(domainEndMs) });
   }
