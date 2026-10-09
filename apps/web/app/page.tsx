@@ -251,27 +251,52 @@ function priceCurve(
   const domainRange = Math.max(0.01, domainMax - domainMin);
   const average =
     values.reduce((sum, slot) => sum + slot.total, 0) / values.length;
-  const xFor = (index: number) =>
+  const slotMs = 15 * 60 * 1000;
+  const firstStartsAtMs = Date.parse(values[0]!.startsAt);
+  const lastStartsAtMs = Date.parse(values[values.length - 1]!.startsAt);
+  const domainStartMs = firstStartsAtMs;
+  const domainEndMs = lastStartsAtMs + slotMs;
+  const domainDurationMs = Math.max(slotMs, domainEndMs - domainStartMs);
+  const xForTime = (startsAtMs: number) =>
     left +
-    (values.length <= 1 ? 0 : (index / (values.length - 1)) * plotWidth);
+    ((startsAtMs - domainStartMs) / domainDurationMs) * plotWidth;
   const yFor = (price: number) =>
     top + ((domainMax - price) / domainRange) * plotHeight;
   const baselineY = yFor(0);
   const points = values
-    .map((slot, index) => `${xFor(index)},${yFor(slot.total)}`)
+    .map(
+      (slot) =>
+        `${xForTime(Date.parse(slot.startsAt))},${yFor(slot.total)}`,
+    )
     .join(" ");
   const area = [
-    `M ${xFor(0)} ${baselineY}`,
+    `M ${xForTime(firstStartsAtMs)} ${baselineY}`,
     ...values.map(
-      (slot, index) => `L ${xFor(index)} ${yFor(slot.total)}`,
+      (slot) =>
+        `L ${xForTime(Date.parse(slot.startsAt))} ${yFor(slot.total)}`,
     ),
-    `L ${xFor(values.length - 1)} ${baselineY}`,
+    `L ${xForTime(lastStartsAtMs)} ${baselineY}`,
     "Z",
   ].join(" ");
-  const currentIndex =
-    currentStartsAt === null
-      ? -1
-      : values.findIndex((slot) => slot.startsAt === currentStartsAt);
+  const currentStartsAtMs =
+    currentStartsAt === null ? Number.NaN : Date.parse(currentStartsAt);
+  const currentIndex = Number.isFinite(currentStartsAtMs)
+    ? values.findIndex(
+        (slot) => Date.parse(slot.startsAt) === currentStartsAtMs,
+      )
+    : -1;
+  const tickHours = ["00", "06", "12", "18"] as const;
+  const timeTicks = tickHours.flatMap((label) => {
+    const slot = values.find(
+      (value) => formatTime(value.startsAt) === `${label}:00`,
+    );
+    return slot
+      ? [{ label, x: xForTime(Date.parse(slot.startsAt)) }]
+      : [];
+  });
+  if (formatTime(values[values.length - 1]!.startsAt) === "23:45") {
+    timeTicks.push({ label: "24", x: xForTime(domainEndMs) });
+  }
 
   return {
     width,
@@ -286,12 +311,15 @@ function priceCurve(
     rawMin,
     rawMax,
     average,
-    xFor,
+    xForTime,
     yFor,
     baselineY,
     points,
     area,
     currentIndex,
+    domainEndMs,
+    slotMs,
+    timeTicks,
   };
 }
 
@@ -542,8 +570,10 @@ export default async function DashboardPage({
                 <h2>Quarter-hour electricity price</h2>
               </div>
               <small>
-                {activeConnection?.priceAreaCode ?? "SE3"} · 15 min ·{" "}
-                {curve.values.length} slots
+                {activeConnection?.priceAreaCode
+                  ? `${activeConnection.priceAreaCode} · `
+                  : ""}
+                15 min · {curve.values.length} slots
               </small>
             </div>
 
@@ -657,13 +687,17 @@ export default async function DashboardPage({
                   />
 
                   {curve.values.map((slot, index) => {
-                    const x = curve.xFor(index);
+                    const startsAtMs = Date.parse(slot.startsAt);
+                    const x = curve.xForTime(startsAtMs);
                     const y = curve.yFor(slot.total);
-                    const nextX =
-                      index === curve.values.length - 1
-                        ? curve.width - curve.right
-                        : curve.xFor(index + 1);
-                    const barWidth = Math.max(2, nextX - x - 1);
+                    const barEndMs = Math.min(
+                      startsAtMs + curve.slotMs,
+                      curve.domainEndMs,
+                    );
+                    const barWidth = Math.max(
+                      2,
+                      curve.xForTime(barEndMs) - x - 1,
+                    );
                     const barY = Math.min(y, curve.baselineY);
                     const barHeight = Math.max(
                       1,
@@ -704,14 +738,26 @@ export default async function DashboardPage({
                     <>
                       <line
                         className="price-now-line"
-                        x1={curve.xFor(curve.currentIndex)}
-                        x2={curve.xFor(curve.currentIndex)}
+                        x1={curve.xForTime(
+                          Date.parse(
+                            curve.values[curve.currentIndex]!.startsAt,
+                          ),
+                        )}
+                        x2={curve.xForTime(
+                          Date.parse(
+                            curve.values[curve.currentIndex]!.startsAt,
+                          ),
+                        )}
                         y1={curve.top}
                         y2={curve.height - curve.bottom}
                       />
                       <circle
                         className="price-now-dot"
-                        cx={curve.xFor(curve.currentIndex)}
+                        cx={curve.xForTime(
+                          Date.parse(
+                            curve.values[curve.currentIndex]!.startsAt,
+                          ),
+                        )}
                         cy={curve.yFor(
                           curve.values[curve.currentIndex]?.total ?? 0,
                         )}
@@ -720,21 +766,21 @@ export default async function DashboardPage({
                     </>
                   ) : null}
 
-                  {["00", "06", "12", "18", "24"].map((label, index) => (
+                  {curve.timeTicks.map((tick, index) => (
                     <text
                       className="price-axis-label"
-                      key={label}
+                      key={tick.label}
                       textAnchor={
                         index === 0
                           ? "start"
-                          : index === 4
+                          : index === curve.timeTicks.length - 1
                             ? "end"
                             : "middle"
                       }
-                      x={curve.left + (curve.plotWidth * index) / 4}
+                      x={tick.x}
                       y={curve.height - 8}
                     >
-                      {label}
+                      {tick.label}
                     </text>
                   ))}
                 </svg>
