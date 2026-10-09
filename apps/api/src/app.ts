@@ -107,6 +107,17 @@ function cacheLifetime(schedule: PriceSchedule): number {
   return schedule.tomorrow.length > 0 ? PRICE_CACHE_MS : PRICE_RETRY_CACHE_MS;
 }
 
+function sumComplete(values: readonly (number | null)[]): number | null {
+  if (values.some((value) => value === null)) return null;
+  return values.reduce((sum, value) => sum + (value ?? 0), 0);
+}
+
+function commonCurrency(values: readonly (string | null)[]): string | null {
+  const known = values.filter((value): value is string => value !== null);
+  if (known.length !== values.length || known.length === 0) return null;
+  return known.every((value) => value === known[0]) ? known[0] ?? null : null;
+}
+
 export function buildApp(options: AppOptions = {}): FastifyInstance {
   const app = Fastify({ logger: false });
   const provider =
@@ -233,6 +244,60 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     async (_request, reply) => {
       try {
         return await energyProperty();
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get<{ Querystring: { days?: string } }>(
+    "/api/energy/property/consumption",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      const days =
+        request.query.days === undefined ? 7 : Number(request.query.days);
+      if (!Number.isInteger(days) || days < 1 || days > 31) {
+        return reply.status(400).send({
+          error: "invalid_days",
+          message: "days must be an integer from 1 to 31",
+        });
+      }
+
+      try {
+        if (provider === null) throw new Error("No energy provider is configured");
+        const property = await energyProperty();
+        const connections = await Promise.all(
+          property.gridConnections.map(async (connection) => {
+            const report = await provider.consumption(
+              connection.providerHomeId,
+              days,
+            );
+            return {
+              gridConnectionId: connection.id,
+              name: connection.name,
+              providerHomeId: connection.providerHomeId,
+              totalConsumption: report.totalConsumption,
+              totalCost: report.totalCost,
+              currency: report.currency,
+            };
+          }),
+        );
+
+        return {
+          propertyId: property.id,
+          days,
+          gridConnectionCount: connections.length,
+          totalConsumption: sumComplete(
+            connections.map((connection) => connection.totalConsumption),
+          ),
+          totalCost: sumComplete(
+            connections.map((connection) => connection.totalCost),
+          ),
+          currency: commonCurrency(
+            connections.map((connection) => connection.currency),
+          ),
+          connections,
+        };
       } catch (error) {
         return unavailable(reply, error);
       }
