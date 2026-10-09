@@ -74,6 +74,9 @@ Endpoints:
 - `GET /api/energy/grid-peaks`
 - `GET /api/energy/devices`
 - `POST /api/energy/automation/preview`
+- `GET /api/home/devices`
+- `GET /api/home/devices/:deviceId/state`
+- `POST /api/home/devices/:deviceId/commands`
 
 ## Dashboard
 
@@ -106,3 +109,16 @@ The dashboard is designed to run separately from the API, typically on port 3003
 - Keeps account credentials on the server side; the browser never receives the Home-Energy API key.
 
 The next development line connects device adapters, starting with Google Home as a companion control surface, while keeping Home-Energy responsible for energy decisions and grid-aware scheduling.
+
+## Google Home
+
+Home-Energy is adding a provider-neutral home-device layer so Google Home can be used as an execution target without coupling the energy core to Google-specific device models.
+
+Current foundation:
+
+- normalized device discovery/state/command contracts
+- protected device-control API routes
+- telemetry contracts for future local meter and device data
+- integration architecture documented in `docs/google-home.md`
+
+The Google Home adapter itself will live in an Android/iOS companion because Google's Home APIs are mobile SDKs rather than a generic server-side REST API.
