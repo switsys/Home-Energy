@@ -283,8 +283,12 @@ export function InteractivePriceCurve({
       : peakRiskSlots.find(
           (slot) => Date.parse(slot.startsAt) === selectedStartsAtMs,
         ) ?? null;
+  const selectedIsElapsed =
+    selectedIndex !== null &&
+    activeCurve.currentIndex >= 0 &&
+    selectedIndex <= activeCurve.currentIndex;
   const selectedEstimate =
-    selectedIndex === null
+    selectedIndex === null || selectedIsElapsed
       ? null
       : estimateLoadWindow(
           activeCurve.values,
@@ -293,7 +297,7 @@ export function InteractivePriceCurve({
           loadPowerKw,
         );
   const firstAvailableIndex =
-    activeCurve.currentIndex >= 0 ? activeCurve.currentIndex : 0;
+    activeCurve.currentIndex >= 0 ? activeCurve.currentIndex + 1 : 0;
   const bestEstimate = activeCurve.values.reduce<WindowEstimate | null>(
     (best, _slot, index) => {
       if (index < firstAvailableIndex) return best;
@@ -310,10 +314,6 @@ export function InteractivePriceCurve({
     },
     null,
   );
-  const selectedIsPast =
-    selectedIndex !== null &&
-    activeCurve.currentIndex >= 0 &&
-    selectedIndex < activeCurve.currentIndex;
   const versusAverage =
     selected === null ? null : selected.total - activeCurve.average;
   const versusNow =
@@ -775,25 +775,26 @@ export function InteractivePriceCurve({
                     : "—"}
                 </strong>
                 <small>
-                  {selectedEstimate
-                    ? `${loadPowerKw.toFixed(1)} kW × ${loadMinutes} min · electricity price only`
-                    : `Not enough remaining slots for ${loadMinutes} min`}
+                  {selectedIsElapsed
+                    ? "Select a future slot for a complete load estimate"
+                    : selectedEstimate
+                      ? `${loadPowerKw.toFixed(1)} kW × ${loadMinutes} min · electricity price only`
+                      : `Not enough remaining slots for ${loadMinutes} min`}
                 </small>
               </div>
             </div>
 
             {selectedEstimate && bestEstimate ? (
               <div className="energy-lens-advice">
-                {selectedIsPast ? (
+                {selectedIsElapsed ? (
                   <>
-                    <span>PAST SLOT</span>
+                    <span>CURRENT / ELAPSED SLOT</span>
                     <strong>
-                      Best future start {formatTime(bestEstimate.startsAt)}
+                      Best complete future start {formatTime(bestEstimate.startsAt)}
                     </strong>
                     <small>
-                      The selected slot has already passed. Future comparison is
-                      based on the same {loadPowerKw.toFixed(1)} kW ×{" "}
-                      {loadMinutes} min load.
+                      This tariff interval has already started, so it is excluded
+                      from complete future-window estimates.
                     </small>
                   </>
                 ) : selectedSavings !== null && selectedSavings > 0.005 ? (
