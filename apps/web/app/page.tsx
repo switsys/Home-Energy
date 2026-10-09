@@ -407,6 +407,53 @@ export default async function DashboardPage({
           </article>
         </section>
 
+        <section className="section">
+          <div className="section-heading">
+            <div>
+              <span className="kicker">GRID CONNECTIONS</span>
+              <h2>{property.name} as one property</h2>
+            </div>
+          </div>
+
+          <div className="connection-grid">
+            {property.gridConnections.map((connection) => {
+              const usage = consumption.connections.find(
+                (item) => item.gridConnectionId === connection.id,
+              );
+              const active = connection.id === activeConnection?.id;
+
+              return (
+                <article
+                  className={`connection-card${active ? " connection-active" : ""}`}
+                  key={connection.id}
+                >
+                  <span className="label">
+                    {active ? "PRIMARY PRICE CONNECTION" : "GRID CONNECTION"}
+                  </span>
+                  <strong>{connection.name}</strong>
+                  <p>
+                    {usage?.totalConsumption === null ||
+                    usage?.totalConsumption === undefined
+                      ? "Consumption unavailable"
+                      : `${number(usage.totalConsumption, 1)} kWh · last 7 days`}
+                  </p>
+                  <small>
+                    {usage?.totalCost === null ||
+                    usage?.totalCost === undefined
+                      ? "Cost unavailable"
+                      : money(usage.totalCost, usage.currency ?? "SEK")}
+                    {" · "}
+                    {connection.gridCompany ?? "Grid company unavailable"}
+                    {connection.priceAreaCode
+                      ? ` · ${connection.priceAreaCode}`
+                      : ""}
+                  </small>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="section planner-section">
           <div className="section-heading planner-heading">
             <div>
