@@ -977,3 +977,134 @@ footer {
     cursor: default;
   }
 }
+
+
+.energy-lens {
+  margin: 0 16px 4px;
+  overflow: hidden;
+  border: 1px solid #27322b;
+  border-radius: 12px;
+  background: rgba(12, 17, 14, .82);
+}
+
+.energy-lens-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid #202922;
+}
+
+.energy-lens-heading strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 18px;
+  letter-spacing: -.35px;
+}
+
+.energy-lens-heading small {
+  color: #718078;
+  font-size: 9px;
+  text-align: right;
+}
+
+.energy-lens-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.energy-lens-grid > div {
+  min-width: 0;
+  padding: 14px 16px;
+  border-right: 1px solid #202922;
+}
+
+.energy-lens-grid > div:last-child {
+  border-right: 0;
+}
+
+.energy-lens-grid span,
+.energy-lens-advice span {
+  display: block;
+  color: #718078;
+  font-size: 8px;
+  font-weight: 760;
+  letter-spacing: .8px;
+}
+
+.energy-lens-grid strong,
+.energy-lens-advice strong {
+  display: block;
+  margin-top: 6px;
+  color: #c7d1ca;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.energy-lens-grid small,
+.energy-lens-advice small {
+  display: block;
+  margin-top: 5px;
+  color: #627068;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.energy-lens-advice {
+  padding: 13px 16px 15px;
+  border-top: 1px solid #27322b;
+  background: linear-gradient(90deg, rgba(111, 211, 154, .07), transparent 62%);
+}
+
+.energy-lens-advice strong {
+  color: var(--green);
+  font-size: 13px;
+}
+
+@media (max-width: 820px) {
+  .energy-lens-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .energy-lens-grid > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .energy-lens-grid > div:nth-child(-n+2) {
+    border-bottom: 1px solid #202922;
+  }
+}
+
+@media (max-width: 620px) {
+  .energy-lens {
+    margin-inline: 9px;
+  }
+
+  .energy-lens-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .energy-lens-heading small {
+    text-align: left;
+  }
+
+  .energy-lens-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .energy-lens-grid > div {
+    border-right: 0;
+    border-bottom: 1px solid #202922;
+  }
+
+  .energy-lens-grid > div:last-child {
+    border-bottom: 0;
+  }
+
+  .energy-lens-grid > div:nth-child(-n+2) {
+    border-bottom: 1px solid #202922;
+  }
+}
