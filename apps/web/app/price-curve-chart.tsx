@@ -184,15 +184,16 @@ export function InteractivePriceCurve({
   const activePointer = useRef<number | null>(null);
 
   if (curve === null) return null;
+  const activeCurve = curve;
 
   const selected =
-    selectedIndex === null ? null : curve.values[selectedIndex] ?? null;
+    selectedIndex === null ? null : activeCurve.values[selectedIndex] ?? null;
   const selectedStartsAtMs =
     selected === null ? null : Date.parse(selected.startsAt);
   const selectedX =
     selectedStartsAtMs === null
       ? null
-      : curve.xForTime(selectedStartsAtMs);
+      : activeCurve.xForTime(selectedStartsAtMs);
   const selectedPeak =
     selectedStartsAtMs === null
       ? null
@@ -207,17 +208,17 @@ export function InteractivePriceCurve({
       1,
       Math.max(0, (clientX - rect.left) / rect.width),
     );
-    const chartX = normalized * curve.width;
+    const chartX = normalized * activeCurve.width;
     const plotRatio = Math.min(
       1,
-      Math.max(0, (chartX - curve.left) / curve.plotWidth),
+      Math.max(0, (chartX - activeCurve.left) / activeCurve.plotWidth),
     );
     const targetMs =
-      curve.domainStartMs + plotRatio * curve.domainDurationMs;
+      activeCurve.domainStartMs + plotRatio * activeCurve.domainDurationMs;
 
     let bestIndex = 0;
     let bestDistance = Number.POSITIVE_INFINITY;
-    curve.values.forEach((slot, index) => {
+    activeCurve.values.forEach((slot, index) => {
       const slotMs = Date.parse(slot.startsAt);
       const distance = Math.abs(slotMs - targetMs);
       if (distance < bestDistance) {
@@ -231,9 +232,9 @@ export function InteractivePriceCurve({
   function moveSelection(delta: number) {
     setSelectedIndex((current) => {
       const base =
-        current ?? (curve.currentIndex >= 0 ? curve.currentIndex : 0);
+        current ?? (activeCurve.currentIndex >= 0 ? activeCurve.currentIndex : 0);
       return Math.min(
-        curve.values.length - 1,
+        activeCurve.values.length - 1,
         Math.max(0, base + delta),
       );
     });
@@ -248,7 +249,7 @@ export function InteractivePriceCurve({
         </div>
         <small>
           {priceAreaCode ? `${priceAreaCode} · ` : ""}
-          15 min · {curve.values.length} slots
+          15 min · {activeCurve.values.length} slots
         </small>
       </div>
 
@@ -265,25 +266,25 @@ export function InteractivePriceCurve({
           <div>
             <span className="label">LOW</span>
             <strong>
-              {money(curve.rawMin, curve.values[0]?.currency ?? "SEK")}
+              {money(activeCurve.rawMin, activeCurve.values[0]?.currency ?? "SEK")}
             </strong>
           </div>
           <div>
             <span className="label">AVERAGE</span>
             <strong>
-              {money(curve.average, curve.values[0]?.currency ?? "SEK")}
+              {money(activeCurve.average, activeCurve.values[0]?.currency ?? "SEK")}
             </strong>
           </div>
           <div>
             <span className="label">HIGH</span>
             <strong>
-              {money(curve.rawMax, curve.values[0]?.currency ?? "SEK")}
+              {money(activeCurve.rawMax, activeCurve.values[0]?.currency ?? "SEK")}
             </strong>
           </div>
         </div>
 
         <div
-          aria-label="Interactive quarter-hour electricity price curve. Drag across the chart or use left and right arrow keys to inspect prices."
+          aria-label="Interactive quarter-hour electricity price activeCurve. Drag across the chart or use left and right arrow keys to inspect prices."
           className="price-chart-interactive"
           onKeyDown={(event) => {
             if (event.key === "ArrowLeft") {
@@ -328,7 +329,7 @@ export function InteractivePriceCurve({
               aria-live="polite"
               className="price-chart-readout"
               style={{
-                left: `${Math.min(92, Math.max(8, (selectedX / curve.width) * 100))}%`,
+                left: `${Math.min(92, Math.max(8, (selectedX / activeCurve.width) * 100))}%`,
               }}
             >
               <span>{formatTime(selected.startsAt)}</span>
@@ -349,7 +350,7 @@ export function InteractivePriceCurve({
               aria-hidden="true"
               className="price-chart"
               preserveAspectRatio="none"
-              viewBox={`0 0 ${curve.width} ${curve.height}`}
+              viewBox={`0 0 ${activeCurve.width} ${activeCurve.height}`}
             >
               <defs>
                 <linearGradient
@@ -387,33 +388,33 @@ export function InteractivePriceCurve({
               {peakRiskSlots.map((slot) => {
                 const startsAtMs = Date.parse(slot.startsAt);
                 if (!Number.isFinite(startsAtMs)) return null;
-                const x = curve.xForTime(startsAtMs);
-                const endX = curve.xForTime(
+                const x = activeCurve.xForTime(startsAtMs);
+                const endX = activeCurve.xForTime(
                   Math.min(
-                    startsAtMs + curve.slotMs,
-                    curve.domainEndMs,
+                    startsAtMs + activeCurve.slotMs,
+                    activeCurve.domainEndMs,
                   ),
                 );
                 return (
                   <rect
                     className="price-peak-band"
-                    height={curve.plotHeight}
+                    height={activeCurve.plotHeight}
                     key={slot.startsAt}
                     width={Math.max(1, endX - x)}
                     x={x}
-                    y={curve.top}
+                    y={activeCurve.top}
                   />
                 );
               })}
 
               {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
-                const y = curve.top + curve.plotHeight * fraction;
+                const y = activeCurve.top + activeCurve.plotHeight * fraction;
                 return (
                   <line
                     className="price-grid-line"
                     key={fraction}
-                    x1={curve.left}
-                    x2={curve.width - curve.right}
+                    x1={activeCurve.left}
+                    x2={activeCurve.width - activeCurve.right}
                     y1={y}
                     y2={y}
                   />
@@ -422,42 +423,42 @@ export function InteractivePriceCurve({
 
               <line
                 className="price-average-line"
-                x1={curve.left}
-                x2={curve.width - curve.right}
-                y1={curve.yFor(curve.average)}
-                y2={curve.yFor(curve.average)}
+                x1={activeCurve.left}
+                x2={activeCurve.width - activeCurve.right}
+                y1={activeCurve.yFor(activeCurve.average)}
+                y2={activeCurve.yFor(activeCurve.average)}
               />
 
               <line
                 className="price-zero-line"
-                x1={curve.left}
-                x2={curve.width - curve.right}
-                y1={curve.baselineY}
-                y2={curve.baselineY}
+                x1={activeCurve.left}
+                x2={activeCurve.width - activeCurve.right}
+                y1={activeCurve.baselineY}
+                y2={activeCurve.baselineY}
               />
 
               <path
                 className="price-area"
-                d={curve.area}
+                d={activeCurve.area}
                 fill="url(#priceArea)"
               />
 
-              {curve.values.map((slot, index) => {
+              {activeCurve.values.map((slot, index) => {
                 const startsAtMs = Date.parse(slot.startsAt);
-                const x = curve.xForTime(startsAtMs);
-                const y = curve.yFor(slot.total);
+                const x = activeCurve.xForTime(startsAtMs);
+                const y = activeCurve.yFor(slot.total);
                 const barEndMs = Math.min(
-                  startsAtMs + curve.slotMs,
-                  curve.domainEndMs,
+                  startsAtMs + activeCurve.slotMs,
+                  activeCurve.domainEndMs,
                 );
                 const barWidth = Math.max(
                   2,
-                  curve.xForTime(barEndMs) - x - 1,
+                  activeCurve.xForTime(barEndMs) - x - 1,
                 );
-                const barY = Math.min(y, curve.baselineY);
+                const barY = Math.min(y, activeCurve.baselineY);
                 const barHeight = Math.max(
                   1,
-                  Math.abs(curve.baselineY - y),
+                  Math.abs(activeCurve.baselineY - y),
                 );
 
                 return (
@@ -465,7 +466,7 @@ export function InteractivePriceCurve({
                     className={`price-slot-bar price-slot-${priceLevelClass(
                       slot.level,
                     )}${
-                      index === curve.currentIndex
+                      index === activeCurve.currentIndex
                         ? " price-slot-current"
                         : ""
                     }${
@@ -485,36 +486,36 @@ export function InteractivePriceCurve({
               <polyline
                 className="price-line"
                 fill="none"
-                points={curve.points}
+                points={activeCurve.points}
                 stroke="url(#priceLine)"
               />
 
-              {curve.currentIndex >= 0 ? (
+              {activeCurve.currentIndex >= 0 ? (
                 <>
                   <line
                     className="price-now-line"
-                    x1={curve.xForTime(
+                    x1={activeCurve.xForTime(
                       Date.parse(
-                        curve.values[curve.currentIndex]!.startsAt,
+                        activeCurve.values[activeCurve.currentIndex]!.startsAt,
                       ),
                     )}
-                    x2={curve.xForTime(
+                    x2={activeCurve.xForTime(
                       Date.parse(
-                        curve.values[curve.currentIndex]!.startsAt,
+                        activeCurve.values[activeCurve.currentIndex]!.startsAt,
                       ),
                     )}
-                    y1={curve.top}
-                    y2={curve.height - curve.bottom}
+                    y1={activeCurve.top}
+                    y2={activeCurve.height - activeCurve.bottom}
                   />
                   <circle
                     className="price-now-dot"
-                    cx={curve.xForTime(
+                    cx={activeCurve.xForTime(
                       Date.parse(
-                        curve.values[curve.currentIndex]!.startsAt,
+                        activeCurve.values[activeCurve.currentIndex]!.startsAt,
                       ),
                     )}
-                    cy={curve.yFor(
-                      curve.values[curve.currentIndex]?.total ?? 0,
+                    cy={activeCurve.yFor(
+                      activeCurve.values[activeCurve.currentIndex]?.total ?? 0,
                     )}
                     r="6"
                   />
@@ -527,31 +528,31 @@ export function InteractivePriceCurve({
                     className="price-selected-line"
                     x1={selectedX}
                     x2={selectedX}
-                    y1={curve.top}
-                    y2={curve.height - curve.bottom}
+                    y1={activeCurve.top}
+                    y2={activeCurve.height - activeCurve.bottom}
                   />
                   <circle
                     className="price-selected-dot"
                     cx={selectedX}
-                    cy={curve.yFor(selected.total)}
+                    cy={activeCurve.yFor(selected.total)}
                     r="7"
                   />
                 </>
               ) : null}
 
-              {curve.timeTicks.map((tick, index) => (
+              {activeCurve.timeTicks.map((tick, index) => (
                 <text
                   className="price-axis-label"
                   key={tick.label}
                   textAnchor={
                     index === 0
                       ? "start"
-                      : index === curve.timeTicks.length - 1
+                      : index === activeCurve.timeTicks.length - 1
                         ? "end"
                         : "middle"
                   }
                   x={tick.x}
-                  y={curve.height - 8}
+                  y={activeCurve.height - 8}
                 >
                   {tick.label}
                 </text>
