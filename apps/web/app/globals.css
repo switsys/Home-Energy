@@ -586,7 +586,8 @@ footer {
   .window-grid,
   .two-column,
   .planner-grid,
-  .peak-grid { grid-template-columns: 1fr; }
+  .peak-grid,
+  .connection-grid { grid-template-columns: 1fr; }
   .planner-heading { align-items: flex-start; flex-direction: column; }
   .planner-form { width: 100%; flex-wrap: wrap; }
   .consumption-card { grid-column: auto; }
@@ -594,3 +595,54 @@ footer {
   footer { flex-direction: column; }
 }
 
+
+
+.connection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.connection-card {
+  min-height: 136px;
+  padding: 19px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(21, 29, 24, .98), rgba(15, 21, 17, .98));
+}
+
+.connection-card strong {
+  display: block;
+  margin-top: 17px;
+  font-size: 22px;
+  letter-spacing: -.6px;
+}
+
+.connection-card p {
+  margin: 8px 0 0;
+  color: #a7b6ac;
+  font-size: 12px;
+}
+
+.connection-card small {
+  display: block;
+  margin-top: 13px;
+  color: #6f8075;
+  font-size: 10px;
+}
+
+.connection-active {
+  border-color: #275f3f;
+  background: linear-gradient(180deg, #173323, #101b14);
+}
+
+.connection-active strong {
+  color: var(--green);
+}
+
+
+@media (max-width: 620px) {
+  .connection-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -35,17 +35,42 @@ type Advice = Readonly<{
   expensiveSlots: readonly PriceSlot[];
 }>;
 
-type Home = Readonly<{
+type GridConnection = Readonly<{
   id: string;
-  name?: string | null;
-  gridCompany?: string | null;
-  priceAreaCode?: string | null;
+  name: string;
+  providerId: string;
+  providerHomeId: string;
+  billingScopeId: string;
+  gridTariffId: string | null;
+  gridCompany: string | null;
+  gridAreaCode: string | null;
+  priceAreaCode: string | null;
 }>;
 
-type Consumption = Readonly<{
+type EnergyProperty = Readonly<{
+  id: string;
+  name: string;
+  timeZone: string | null;
+  gridConnections: readonly GridConnection[];
+}>;
+
+type PropertyConsumptionConnection = Readonly<{
+  gridConnectionId: string;
+  name: string;
+  providerHomeId: string;
   totalConsumption: number | null;
   totalCost: number | null;
   currency: string | null;
+}>;
+
+type PropertyConsumption = Readonly<{
+  propertyId: string;
+  days: number;
+  gridConnectionCount: number;
+  totalConsumption: number | null;
+  totalCost: number | null;
+  currency: string | null;
+  connections: readonly PropertyConsumptionConnection[];
 }>;
 
 type LoadPlanDemandImpact = Readonly<{
@@ -113,6 +138,22 @@ type DemandPeakReport = Readonly<{
   trackedAveragePeakKw: number | null;
   thresholdKw: number | null;
   estimatedDemandCharge: number | null;
+}>;
+
+type PropertyGridPeakConnection = DemandPeakReport &
+  Readonly<{
+    gridConnectionId: string;
+    billingScopeId: string;
+    name: string;
+    providerHomeId: string;
+  }>;
+
+type PropertyGridPeaks = Readonly<{
+  propertyId: string;
+  billingMode: "per_connection";
+  currency: string | null;
+  estimatedDemandChargeTotal: number | null;
+  connections: readonly PropertyGridPeakConnection[];
 }>;
 
 type DashboardPageProps = Readonly<{
@@ -243,14 +284,14 @@ export default async function DashboardPage({
   );
   const plannerPowerKw = queryNumber(query.powerKw, 1.5, 0.1, 100);
   let advice: Advice;
-  let homes: readonly Home[];
-  let consumption: Consumption;
+  let property: EnergyProperty;
+  let consumption: PropertyConsumption;
 
   try {
-    [advice, { homes }, consumption] = await Promise.all([
+    [advice, property, consumption] = await Promise.all([
       api<Advice>("/api/energy/advice"),
-      api<{ homes: readonly Home[] }>("/api/energy/homes"),
-      api<Consumption>("/api/energy/consumption?days=7"),
+      api<EnergyProperty>("/api/energy/property"),
+      api<PropertyConsumption>("/api/energy/property/consumption?days=7"),
     ]);
   } catch (error) {
     return (
@@ -266,7 +307,7 @@ export default async function DashboardPage({
 
   let loadPlan: LoadPlan | null = null;
   let loadPlanError: string | null = null;
-  let gridPeaks: DemandPeakReport | null = null;
+  let propertyPeaks: PropertyGridPeaks | null = null;
 
   try {
     const params = new URLSearchParams({
@@ -280,13 +321,21 @@ export default async function DashboardPage({
   }
 
   try {
-    gridPeaks = await api<DemandPeakReport>("/api/energy/grid-peaks");
+    propertyPeaks = await api<PropertyGridPeaks>(
+      "/api/energy/property/grid-peaks",
+    );
   } catch {
-    gridPeaks = null;
+    propertyPeaks = null;
   }
 
-  const home = homes.find((item) => item.id === advice.homeId);
+  const activeConnection = property.gridConnections.find(
+    (connection) => connection.providerHomeId === advice.homeId,
+  );
   const signal = signalText(advice.recommendation.action);
+  const allPeaksInactive =
+    propertyPeaks?.connections.every(
+      (connection) => connection.status === "inactive",
+    ) ?? false;
   const windows = [
     advice.cheapestWindows.minutes30,
     advice.cheapestWindows.minutes60,
@@ -314,11 +363,11 @@ export default async function DashboardPage({
         <section className="heading">
           <div>
             <span className="kicker">
-              {home?.name ?? "HOME"} · {home?.priceAreaCode ?? "ENERGY"}
+              {property.name} · {property.gridConnections.length} GRID CONNECTIONS
             </span>
             <h1>Energy overview</h1>
             <p>
-              Price intelligence now. Telemetry and automation next.
+              One property view across both metered inlets.
             </p>
           </div>
 
@@ -374,8 +423,57 @@ export default async function DashboardPage({
                     consumption.currency ?? "SEK",
                   )}
             </p>
-            <small>{home?.gridCompany ?? "Grid company unavailable"}</small>
+            <small>
+              Across {consumption.gridConnectionCount} separate grid connections
+            </small>
           </article>
+        </section>
+
+        <section className="section">
+          <div className="section-heading">
+            <div>
+              <span className="kicker">GRID CONNECTIONS</span>
+              <h2>{property.name} as one property</h2>
+            </div>
+          </div>
+
+          <div className="connection-grid">
+            {property.gridConnections.map((connection) => {
+              const usage = consumption.connections.find(
+                (item) => item.gridConnectionId === connection.id,
+              );
+              const active = connection.id === activeConnection?.id;
+
+              return (
+                <article
+                  className={`connection-card${active ? " connection-active" : ""}`}
+                  key={connection.id}
+                >
+                  <span className="label">
+                    {active ? "PRIMARY PRICE CONNECTION" : "GRID CONNECTION"}
+                  </span>
+                  <strong>{connection.name}</strong>
+                  <p>
+                    {usage?.totalConsumption === null ||
+                    usage?.totalConsumption === undefined
+                      ? "Consumption unavailable"
+                      : `${number(usage.totalConsumption, 1)} kWh · last 7 days`}
+                  </p>
+                  <small>
+                    {usage?.totalCost === null ||
+                    usage?.totalCost === undefined
+                      ? "Cost unavailable"
+                      : money(usage.totalCost, usage.currency ?? "SEK")}
+                    {" · "}
+                    {connection.gridCompany ?? "Grid company unavailable"}
+                    {connection.priceAreaCode
+                      ? ` · ${connection.priceAreaCode}`
+                      : ""}
+                  </small>
+                </article>
+              );
+            })}
+          </div>
         </section>
 
         <section className="section planner-section">
@@ -494,80 +592,83 @@ export default async function DashboardPage({
           )}
         </section>
 
-        {gridPeaks ? (
+        {propertyPeaks ? (
           <section className="section">
             <div className="section-heading">
               <div>
                 <span className="kicker">PEAK DEMAND</span>
-                <h2>Falu Elnät effect charge</h2>
+                <h2>Falu Elnät effect charge · separate per inlet</h2>
               </div>
             </div>
 
-            {gridPeaks.status === "inactive" ? (
+            {allPeaksInactive ? (
               <article className="peak-card peak-offseason">
                 <span className="label">CURRENT PERIOD</span>
                 <strong>OFF-SEASON</strong>
                 <p>No effect charge applies this month.</p>
                 <small>
-                  Next active period: 1 November · {gridPeaks.label}
+                  Next active period: 1 November ·{" "}
+                  {propertyPeaks.connections.length} separate billing scopes
                 </small>
               </article>
             ) : (
               <>
-                <div className="peak-grid">
-                  <article className="peak-card">
-                    <span className="label">TRACKED TOP-3 AVERAGE</span>
-                    <strong>
-                      {gridPeaks.trackedAveragePeakKw === null
-                        ? "NO DATA"
-                        : `${number(gridPeaks.trackedAveragePeakKw, 2)} kW`}
-                    </strong>
-                    <p>
-                      {number(gridPeaks.demandRatePerKwMonth, 0)} SEK/kW ·{" "}
-                      {gridPeaks.peakDays.length}/{gridPeaks.requiredPeakDays} peak days
-                    </p>
-                    <small>{gridPeaks.label} · {gridPeaks.billingMonth}</small>
-                  </article>
+                <article className="peak-card peak-summary">
+                  <span className="label">PROPERTY EFFECT CHARGE</span>
+                  <strong>
+                    {propertyPeaks.estimatedDemandChargeTotal === null
+                      ? "PARTIAL"
+                      : money(
+                          propertyPeaks.estimatedDemandChargeTotal,
+                          propertyPeaks.currency ?? "SEK",
+                        )}
+                  </strong>
+                  <p>
+                    Sum of the separately calculated inlet charges. Peak demand
+                    is never merged across the two meters.
+                  </p>
+                  <small>
+                    {propertyPeaks.connections.length} independent billing scopes
+                  </small>
+                </article>
 
-                  <article className="peak-card">
-                    <span className="label">ESTIMATED EFFECT CHARGE</span>
-                    <strong>
-                      {gridPeaks.estimatedDemandCharge === null
-                        ? "—"
-                        : money(
-                            gridPeaks.estimatedDemandCharge,
-                            gridPeaks.currency,
-                          )}
-                    </strong>
-                    <p>
-                      {gridPeaks.thresholdKw === null
-                        ? `Need ${gridPeaks.requiredPeakDays} separate peak days before the estimate is complete.`
-                        : `Current top-3 threshold: ${number(gridPeaks.thresholdKw, 2)} kW`}
-                    </p>
-                    <small>
-                      {gridPeaks.eligibleHours} eligible hourly readings analysed
-                    </small>
-                  </article>
-                </div>
-
-                <div className="peak-list">
-                  <div className="peak-list-heading">
-                    <span className="label">HIGHEST HOURLY PEAKS</span>
-                    <small>Highest eligible hour from each day</small>
-                  </div>
-                  {gridPeaks.peakDays.length > 0 ? (
-                    gridPeaks.peakDays.map((peak, index) => (
-                      <div className="peak-row" key={peak.startsAt}>
-                        <span className="peak-rank">{index + 1}</span>
-                        <span>{formatDateTime(peak.startsAt)}</span>
-                        <strong>{number(peak.averageKw, 2)} kW</strong>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="peak-empty">
-                      No eligible hourly readings yet for this billing month.
-                    </div>
-                  )}
+                <div className="peak-grid connection-peak-grid">
+                  {propertyPeaks.connections.map((connection) => (
+                    <article
+                      className="peak-card"
+                      key={connection.gridConnectionId}
+                    >
+                      <span className="label">{connection.name}</span>
+                      <strong>
+                        {connection.estimatedDemandCharge === null
+                          ? connection.status === "no_data"
+                            ? "NO DATA"
+                            : "PARTIAL"
+                          : money(
+                              connection.estimatedDemandCharge,
+                              connection.currency,
+                            )}
+                      </strong>
+                      <p>
+                        {connection.trackedAveragePeakKw === null
+                          ? "No tracked peak average yet."
+                          : `${number(
+                              connection.trackedAveragePeakKw,
+                              2,
+                            )} kW tracked top-3 average`}
+                      </p>
+                      <small>
+                        {connection.thresholdKw === null
+                          ? `${connection.peakDays.length}/${connection.requiredPeakDays} peak days`
+                          : `Threshold ${number(
+                              connection.thresholdKw,
+                              2,
+                            )} kW`}
+                        {" · "}
+                        {number(connection.demandRatePerKwMonth, 0)} SEK/kW
+                      </small>
+                    </article>
+                  ))}
                 </div>
               </>
             )}

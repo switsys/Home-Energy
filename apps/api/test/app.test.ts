@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildEnergyProperty,
   faluElnat2026,
+  type EnergyDeviceProvider,
   type EnergyProvider,
   type HomeDeviceGateway,
   type PriceSchedule,
@@ -382,6 +384,291 @@ describe("Home-Energy API", () => {
             minimumIncrementalDemandCharge: 0,
           },
         },
+      },
+    });
+  });
+
+  it("groups two provider homes into one property with separate grid billing scopes", async () => {
+    const multiHomeProvider: EnergyProvider = {
+      ...provider,
+      homes: async () => [
+        {
+          id: "home-1",
+          name: "Li-Erikes Gård",
+          timeZone: "Europe/Stockholm",
+          gridCompany: "Falu Elnät AB",
+          gridAreaCode: "FLN",
+          priceAreaCode: "SE3",
+        },
+        {
+          id: "home-2",
+          name: "Hus2/3",
+          timeZone: "Europe/Stockholm",
+          gridCompany: "Falu Elnät AB",
+          gridAreaCode: "FLN",
+          priceAreaCode: "SE3",
+        },
+      ],
+    };
+    const property = buildEnergyProperty({
+      id: "li-erikes",
+      name: "Li-Erikes Gård",
+      providerId: "fake",
+      homes: await multiHomeProvider.homes(),
+      gridTariffId: "falu-elnat-2026",
+    });
+    const app = buildApp({
+      provider: multiHomeProvider,
+      apiKey: "secret",
+      property,
+      gridTariff: faluElnat2026,
+    });
+
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/property",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: "li-erikes",
+      name: "Li-Erikes Gård",
+      gridConnections: [
+        {
+          id: "fake:home-1",
+          providerHomeId: "home-1",
+          billingScopeId: "fake:home-1",
+        },
+        {
+          id: "fake:home-2",
+          providerHomeId: "home-2",
+          billingScopeId: "fake:home-2",
+        },
+      ],
+    });
+  });
+
+  it("aggregates consumption across both grid connections without collapsing their identities", async () => {
+    const multiHomeProvider: EnergyProvider = {
+      ...provider,
+      homes: async () => [
+        { id: "home-1", name: "Li-Erikes Gård" },
+        { id: "home-2", name: "Hus2/3" },
+      ],
+      consumption: async (homeId, days) => ({
+        provider: "fake",
+        homeId,
+        samples: [],
+        count: days,
+        totalConsumption: homeId === "home-1" ? 42 : 18,
+        totalCost: homeId === "home-1" ? 84 : 36,
+        currency: "SEK",
+      }),
+    };
+    const property = buildEnergyProperty({
+      id: "li-erikes",
+      name: "Li-Erikes Gård",
+      providerId: "fake",
+      homes: await multiHomeProvider.homes(),
+    });
+    const app = buildApp({
+      provider: multiHomeProvider,
+      apiKey: "secret",
+      property,
+    });
+
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/property/consumption?days=7",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      propertyId: "li-erikes",
+      days: 7,
+      gridConnectionCount: 2,
+      totalConsumption: 60,
+      totalCost: 120,
+      currency: "SEK",
+      connections: [
+        {
+          gridConnectionId: "fake:home-1",
+          totalConsumption: 42,
+          totalCost: 84,
+        },
+        {
+          gridConnectionId: "fake:home-2",
+          totalConsumption: 18,
+          totalCost: 36,
+        },
+      ],
+    });
+  });
+
+  it("keeps effect-charge peak histories separate for both grid connections", async () => {
+    const sample = (homeId: string, day: string, consumption: number) => ({
+      from: `2026-11-${day}T09:00:00+01:00`,
+      to: `2026-11-${day}T10:00:00+01:00`,
+      consumption,
+      consumptionUnit: "kWh",
+      unitPrice: null,
+      unitPriceVat: null,
+      cost: null,
+      currency: "SEK",
+    });
+    const multiHomeProvider: EnergyProvider = {
+      ...provider,
+      homes: async () => [
+        { id: "home-1", name: "Li-Erikes Gård" },
+        { id: "home-2", name: "Hus2/3" },
+      ],
+      hourlyConsumption: async (homeId) => {
+        const values = homeId === "home-1" ? [5, 7, 6] : [2, 4, 3];
+        return {
+          provider: "fake",
+          homeId,
+          samples: [
+            sample(homeId, "02", values[0] ?? 0),
+            sample(homeId, "03", values[1] ?? 0),
+            sample(homeId, "04", values[2] ?? 0),
+          ],
+          count: 3,
+          totalConsumption: values.reduce((sum, value) => sum + value, 0),
+          totalCost: null,
+          currency: "SEK",
+        };
+      },
+    };
+    const property = buildEnergyProperty({
+      id: "li-erikes",
+      name: "Li-Erikes Gård",
+      providerId: "fake",
+      homes: await multiHomeProvider.homes(),
+      gridTariffId: "falu-elnat-2026",
+    });
+    const app = buildApp({
+      provider: multiHomeProvider,
+      apiKey: "secret",
+      property,
+      gridTariff: faluElnat2026,
+      clock: () => new Date("2026-11-10T12:00:00+01:00"),
+    });
+
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/property/grid-peaks",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      propertyId: "li-erikes",
+      billingMode: "per_connection",
+      currency: "SEK",
+      estimatedDemandChargeTotal: 675,
+      connections: [
+        {
+          gridConnectionId: "fake:home-1",
+          billingScopeId: "fake:home-1",
+          trackedAveragePeakKw: 6,
+          estimatedDemandCharge: 450,
+        },
+        {
+          gridConnectionId: "fake:home-2",
+          billingScopeId: "fake:home-2",
+          trackedAveragePeakKw: 3,
+          estimatedDemandCharge: 225,
+        },
+      ],
+    });
+  });
+
+  it("plans device automation against the grid connection mapped to that device", async () => {
+    const prices: PriceSchedule["today"] = [
+      "10:00",
+      "10:15",
+      "10:30",
+      "10:45",
+    ].map((time) => ({
+      total: 0.5,
+      energy: 0.5,
+      tax: 0,
+      startsAt: `2026-10-09T${time}:00+02:00`,
+      currency: "SEK",
+      level: "CHEAP" as const,
+    }));
+    const multiHomeProvider: EnergyProvider = {
+      ...provider,
+      homes: async () => [
+        { id: "home-1", name: "Li-Erikes Gård" },
+        { id: "home-2", name: "Hus2/3" },
+      ],
+      prices: async (homeId) => ({
+        provider: "fake",
+        homeId,
+        current: prices[0] ?? null,
+        today: prices,
+        tomorrow: [],
+      }),
+    };
+    const property = buildEnergyProperty({
+      id: "li-erikes",
+      name: "Li-Erikes Gård",
+      providerId: "fake",
+      homes: await multiHomeProvider.homes(),
+      gridTariffId: "falu-elnat-2026",
+    });
+    const deviceProvider: EnergyDeviceProvider = {
+      id: "google-home",
+      devices: async (propertyId) => [
+        {
+          id: "heater-1",
+          propertyId,
+          gridConnectionId: "fake:home-2",
+          providerScopeId: "google-home-li-erikes",
+          name: "Workshop heater",
+          kind: "heater",
+          controllable: true,
+          nominalPowerKw: 1.5,
+          powerState: "off",
+        },
+      ],
+    };
+    const app = buildApp({
+      provider: multiHomeProvider,
+      deviceProvider,
+      property,
+      apiKey: "secret",
+      gridTariff: faluElnat2026,
+      clock: () => new Date("2026-10-09T10:00:00+02:00"),
+    });
+
+    const response = await app.inject({
+      headers: {
+        "content-type": "application/json",
+        "x-home-energy-key": "secret",
+      },
+      method: "POST",
+      url: "/api/energy/automation/preview",
+      payload: {
+        deviceId: "heater-1",
+        minutes: 60,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      provider: "google-home",
+      propertyId: "li-erikes",
+      gridConnectionId: "fake:home-2",
+      homeId: "home-2",
+      automation: {
+        deviceId: "heater-1",
+        requiresApproval: true,
+        controlAvailable: true,
+        powerKw: 1.5,
       },
     });
   });

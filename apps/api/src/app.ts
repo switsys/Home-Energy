@@ -1,10 +1,15 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
   buildDemandPeakReport,
+  buildDeviceAutomationPreview,
+  buildEnergyProperty,
   buildEnergyAdvice,
   buildLoadPlan,
+  findGridConnection,
   resolveGridTariff,
   type DemandPeakReport,
+  type EnergyDeviceProvider,
+  type EnergyProperty,
   type EnergyProvider,
   type GridTariff,
   type HomeDeviceGateway,
@@ -31,6 +36,8 @@ export type AppOptions = Readonly<{
   defaultHomeId?: string | null;
   gridTariff?: GridTariff | null;
   deviceGateway?: HomeDeviceGateway | null;
+  deviceProvider?: EnergyDeviceProvider | null;
+  property?: EnergyProperty | null;
 }>;
 
 function configured(value: string | null | undefined): string | null {
@@ -102,6 +109,17 @@ function cacheLifetime(schedule: PriceSchedule): number {
   return schedule.tomorrow.length > 0 ? PRICE_CACHE_MS : PRICE_RETRY_CACHE_MS;
 }
 
+function sumComplete(values: readonly (number | null)[]): number | null {
+  if (values.some((value) => value === null)) return null;
+  return values.reduce((sum, value) => sum + (value ?? 0), 0);
+}
+
+function commonCurrency(values: readonly (string | null)[]): string | null {
+  const known = values.filter((value): value is string => value !== null);
+  if (known.length !== values.length || known.length === 0) return null;
+  return known.every((value) => value === known[0]) ? known[0] ?? null : null;
+}
+
 export function buildApp(options: AppOptions = {}): FastifyInstance {
   const app = Fastify({ logger: false });
   const provider =
@@ -121,6 +139,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       ? resolveGridTariff(configured(process.env.HOME_ENERGY_GRID_TARIFF))
       : options.gridTariff;
   const deviceGateway = options.deviceGateway ?? null;
+  const deviceProvider = options.deviceProvider ?? null;
+  const explicitProperty = options.property ?? null;
+  const propertyId =
+    configured(process.env.HOME_ENERGY_PROPERTY_ID) ?? "home";
+  const propertyName =
+    configured(process.env.HOME_ENERGY_PROPERTY_NAME) ?? "Home";
   const requireAccess = accessGuard(apiKey);
 
   let homesCache: TimedCache<Awaited<ReturnType<EnergyProvider["homes"]>>> | null =
@@ -146,6 +170,23 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const first = (await homes())[0];
     if (first === undefined) throw new Error("No homes are visible to provider");
     return first.id;
+  }
+
+  async function energyProperty(): Promise<EnergyProperty> {
+    if (explicitProperty !== null) return explicitProperty;
+    if (provider === null) throw new Error("No energy provider is configured");
+
+    const providerHomes = await homes();
+    return buildEnergyProperty({
+      id: propertyId,
+      name:
+        propertyName === "Home"
+          ? providerHomes[0]?.name?.trim() || propertyName
+          : propertyName,
+      providerId: provider.id,
+      homes: providerHomes,
+      gridTariffId: gridTariff?.id ?? null,
+    });
   }
 
   async function prices(homeId: string): Promise<PriceSchedule> {
@@ -200,6 +241,152 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     gridTariff: gridTariff?.id ?? null,
     deviceGateway: deviceGateway?.id ?? null,
   }));
+
+  app.get(
+    "/api/energy/property",
+    { preHandler: requireAccess },
+    async (_request, reply) => {
+      try {
+        return await energyProperty();
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get<{ Querystring: { days?: string } }>(
+    "/api/energy/property/consumption",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      const days =
+        request.query.days === undefined ? 7 : Number(request.query.days);
+      if (!Number.isInteger(days) || days < 1 || days > 31) {
+        return reply.status(400).send({
+          error: "invalid_days",
+          message: "days must be an integer from 1 to 31",
+        });
+      }
+
+      try {
+        if (provider === null) throw new Error("No energy provider is configured");
+        const property = await energyProperty();
+        const connections = await Promise.all(
+          property.gridConnections.map(async (connection) => {
+            const report = await provider.consumption(
+              connection.providerHomeId,
+              days,
+            );
+            return {
+              gridConnectionId: connection.id,
+              name: connection.name,
+              providerHomeId: connection.providerHomeId,
+              totalConsumption: report.totalConsumption,
+              totalCost: report.totalCost,
+              currency: report.currency,
+            };
+          }),
+        );
+
+        return {
+          propertyId: property.id,
+          days,
+          gridConnectionCount: connections.length,
+          totalConsumption: sumComplete(
+            connections.map((connection) => connection.totalConsumption),
+          ),
+          totalCost: sumComplete(
+            connections.map((connection) => connection.totalCost),
+          ),
+          currency: commonCurrency(
+            connections.map((connection) => connection.currency),
+          ),
+          connections,
+        };
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get(
+    "/api/energy/property/grid-peaks",
+    { preHandler: requireAccess },
+    async (_request, reply) => {
+      if (gridTariff === null) {
+        return reply.status(503).send({
+          error: "grid_tariff_not_configured",
+        });
+      }
+
+      try {
+        if (provider === null) throw new Error("No energy provider is configured");
+
+        const property = await energyProperty();
+        const now = clock();
+        const emptyReport = buildDemandPeakReport([], gridTariff, now);
+
+        if (
+          emptyReport.status !== "inactive" &&
+          provider.hourlyConsumption === undefined
+        ) {
+          return reply.status(501).send({
+            error: "hourly_consumption_unsupported",
+          });
+        }
+
+        const connections = await Promise.all(
+          property.gridConnections.map(async (connection) => {
+            const report =
+              emptyReport.status === "inactive"
+                ? emptyReport
+                : buildDemandPeakReport(
+                    (
+                      await provider.hourlyConsumption!(
+                        connection.providerHomeId,
+                        31 * 24,
+                      )
+                    ).samples,
+                    gridTariff,
+                    now,
+                  );
+
+            return {
+              gridConnectionId: connection.id,
+              billingScopeId: connection.billingScopeId,
+              name: connection.name,
+              providerHomeId: connection.providerHomeId,
+              ...report,
+            };
+          }),
+        );
+
+        const complete = connections.every(
+          (connection) =>
+            connection.status === "inactive" ||
+            (connection.status === "estimated" &&
+              connection.estimatedDemandCharge !== null),
+        );
+
+        return {
+          propertyId: property.id,
+          billingMode: "per_connection",
+          currency: commonCurrency(
+            connections.map((connection) => connection.currency),
+          ),
+          estimatedDemandChargeTotal: complete
+            ? connections.reduce(
+                (sum, connection) =>
+                  sum + (connection.estimatedDemandCharge ?? 0),
+                0,
+              )
+            : null,
+          connections,
+        };
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
 
   app.get(
     "/api/energy/homes",
@@ -393,6 +580,119 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
           command,
           params: request.body.params,
         });
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get(
+    "/api/energy/devices",
+    { preHandler: requireAccess },
+    async (_request, reply) => {
+      if (deviceProvider === null) {
+        return reply.status(501).send({
+          error: "device_provider_not_configured",
+        });
+      }
+
+      try {
+        const property = await energyProperty();
+        return {
+          provider: deviceProvider.id,
+          propertyId: property.id,
+          devices: await deviceProvider.devices(property.id),
+        };
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Body: { deviceId?: string; minutes?: number };
+  }>(
+    "/api/energy/automation/preview",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      if (deviceProvider === null) {
+        return reply.status(501).send({
+          error: "device_provider_not_configured",
+        });
+      }
+
+      const deviceId = configured(request.body?.deviceId);
+      if (deviceId === null) {
+        return reply.status(400).send({
+          error: "invalid_device_id",
+        });
+      }
+
+      const minutes = request.body?.minutes ?? 120;
+      if (!Number.isInteger(minutes) || minutes < 15 || minutes > 24 * 60) {
+        return reply.status(400).send({
+          error: "invalid_minutes",
+          message: "minutes must be an integer from 15 to 1440",
+        });
+      }
+
+      try {
+        const property = await energyProperty();
+        const devices = await deviceProvider.devices(property.id);
+        const device = devices.find((item) => item.id === deviceId);
+        if (device === undefined) {
+          return reply.status(404).send({
+            error: "device_not_found",
+          });
+        }
+
+        if (device.gridConnectionId === null) {
+          return reply.status(409).send({
+            error: "device_grid_connection_not_configured",
+          });
+        }
+
+        const connection = findGridConnection(
+          property,
+          device.gridConnectionId,
+        );
+        if (connection === null) {
+          return reply.status(409).send({
+            error: "device_grid_connection_not_found",
+          });
+        }
+
+        if (
+          device.nominalPowerKw === null ||
+          !Number.isFinite(device.nominalPowerKw) ||
+          device.nominalPowerKw <= 0
+        ) {
+          return reply.status(409).send({
+            error: "device_power_not_configured",
+          });
+        }
+
+        const homeId = connection.providerHomeId;
+        const peakReport = await peakReportForPlanning(homeId);
+        const plan = buildLoadPlan(
+          await prices(homeId),
+          {
+            durationMinutes: minutes,
+            powerKw: device.nominalPowerKw,
+          },
+          clock(),
+          gridTariff,
+          peakReport,
+        );
+
+        return {
+          provider: deviceProvider.id,
+          propertyId: property.id,
+          gridConnectionId: connection.id,
+          homeId,
+          plan,
+          automation: buildDeviceAutomationPreview(plan, device),
+        };
       } catch (error) {
         return unavailable(reply, error);
       }
