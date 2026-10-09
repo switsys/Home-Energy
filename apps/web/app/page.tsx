@@ -35,17 +35,42 @@ type Advice = Readonly<{
   expensiveSlots: readonly PriceSlot[];
 }>;
 
-type Home = Readonly<{
+type GridConnection = Readonly<{
   id: string;
-  name?: string | null;
-  gridCompany?: string | null;
-  priceAreaCode?: string | null;
+  name: string;
+  providerId: string;
+  providerHomeId: string;
+  billingScopeId: string;
+  gridTariffId: string | null;
+  gridCompany: string | null;
+  gridAreaCode: string | null;
+  priceAreaCode: string | null;
 }>;
 
-type Consumption = Readonly<{
+type EnergyProperty = Readonly<{
+  id: string;
+  name: string;
+  timeZone: string | null;
+  gridConnections: readonly GridConnection[];
+}>;
+
+type PropertyConsumptionConnection = Readonly<{
+  gridConnectionId: string;
+  name: string;
+  providerHomeId: string;
   totalConsumption: number | null;
   totalCost: number | null;
   currency: string | null;
+}>;
+
+type PropertyConsumption = Readonly<{
+  propertyId: string;
+  days: number;
+  gridConnectionCount: number;
+  totalConsumption: number | null;
+  totalCost: number | null;
+  currency: string | null;
+  connections: readonly PropertyConsumptionConnection[];
 }>;
 
 type LoadPlanDemandImpact = Readonly<{
@@ -243,14 +268,14 @@ export default async function DashboardPage({
   );
   const plannerPowerKw = queryNumber(query.powerKw, 1.5, 0.1, 100);
   let advice: Advice;
-  let homes: readonly Home[];
-  let consumption: Consumption;
+  let property: EnergyProperty;
+  let consumption: PropertyConsumption;
 
   try {
-    [advice, { homes }, consumption] = await Promise.all([
+    [advice, property, consumption] = await Promise.all([
       api<Advice>("/api/energy/advice"),
-      api<{ homes: readonly Home[] }>("/api/energy/homes"),
-      api<Consumption>("/api/energy/consumption?days=7"),
+      api<EnergyProperty>("/api/energy/property"),
+      api<PropertyConsumption>("/api/energy/property/consumption?days=7"),
     ]);
   } catch (error) {
     return (
@@ -285,7 +310,9 @@ export default async function DashboardPage({
     gridPeaks = null;
   }
 
-  const home = homes.find((item) => item.id === advice.homeId);
+  const activeConnection = property.gridConnections.find(
+    (connection) => connection.providerHomeId === advice.homeId,
+  );
   const signal = signalText(advice.recommendation.action);
   const windows = [
     advice.cheapestWindows.minutes30,
@@ -314,11 +341,11 @@ export default async function DashboardPage({
         <section className="heading">
           <div>
             <span className="kicker">
-              {home?.name ?? "HOME"} · {home?.priceAreaCode ?? "ENERGY"}
+              {property.name} · {property.gridConnections.length} GRID CONNECTIONS
             </span>
             <h1>Energy overview</h1>
             <p>
-              Price intelligence now. Telemetry and automation next.
+              One property view across both metered inlets.
             </p>
           </div>
 
@@ -374,7 +401,9 @@ export default async function DashboardPage({
                     consumption.currency ?? "SEK",
                   )}
             </p>
-            <small>{home?.gridCompany ?? "Grid company unavailable"}</small>
+            <small>
+              Across {consumption.gridConnectionCount} separate grid connections
+            </small>
           </article>
         </section>
 
