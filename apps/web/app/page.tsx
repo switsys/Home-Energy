@@ -5,6 +5,14 @@ type PriceSlot = Readonly<{
   level: string | null;
 }>;
 
+type PriceSchedule = Readonly<{
+  provider: string;
+  homeId: string;
+  current: PriceSlot | null;
+  today: readonly PriceSlot[];
+  tomorrow: readonly PriceSlot[];
+}>;
+
 type PriceWindow = Readonly<{
   minutes: number;
   startsAt: string;
@@ -196,6 +204,97 @@ function number(value: number, digits = 1): string {
   }).format(value);
 }
 
+function priceLevelClass(level: string | null): string {
+  switch (level) {
+    case "VERY_CHEAP":
+      return "very-cheap";
+    case "CHEAP":
+      return "cheap";
+    case "EXPENSIVE":
+      return "expensive";
+    case "VERY_EXPENSIVE":
+      return "very-expensive";
+    default:
+      return "normal";
+  }
+}
+
+function priceCurve(
+  slots: readonly PriceSlot[],
+  currentStartsAt: string | null,
+) {
+  const values = slots
+    .filter(
+      (slot) =>
+        Number.isFinite(slot.total) &&
+        Number.isFinite(Date.parse(slot.startsAt)),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(left.startsAt) - Date.parse(right.startsAt),
+    );
+
+  if (values.length === 0) return null;
+
+  const width = 1000;
+  const height = 250;
+  const left = 20;
+  const right = 20;
+  const top = 20;
+  const bottom = 32;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const rawMin = Math.min(...values.map((slot) => slot.total));
+  const rawMax = Math.max(...values.map((slot) => slot.total));
+  const domainMin = Math.min(0, rawMin);
+  const domainMax = Math.max(0, rawMax);
+  const domainRange = Math.max(0.01, domainMax - domainMin);
+  const average =
+    values.reduce((sum, slot) => sum + slot.total, 0) / values.length;
+  const xFor = (index: number) =>
+    left +
+    (values.length <= 1 ? 0 : (index / (values.length - 1)) * plotWidth);
+  const yFor = (price: number) =>
+    top + ((domainMax - price) / domainRange) * plotHeight;
+  const baselineY = yFor(0);
+  const points = values
+    .map((slot, index) => `${xFor(index)},${yFor(slot.total)}`)
+    .join(" ");
+  const area = [
+    `M ${xFor(0)} ${baselineY}`,
+    ...values.map(
+      (slot, index) => `L ${xFor(index)} ${yFor(slot.total)}`,
+    ),
+    `L ${xFor(values.length - 1)} ${baselineY}`,
+    "Z",
+  ].join(" ");
+  const currentIndex =
+    currentStartsAt === null
+      ? -1
+      : values.findIndex((slot) => slot.startsAt === currentStartsAt);
+
+  return {
+    width,
+    height,
+    left,
+    right,
+    top,
+    bottom,
+    plotWidth,
+    plotHeight,
+    values,
+    rawMin,
+    rawMax,
+    average,
+    xFor,
+    yFor,
+    baselineY,
+    points,
+    area,
+    currentIndex,
+  };
+}
+
 function demandImpactText(window: LoadPlanWindow | null): string | null {
   const impact = window?.grid?.demandImpact;
   if (!impact || impact.status === "none") return null;
@@ -284,12 +383,14 @@ export default async function DashboardPage({
   );
   const plannerPowerKw = queryNumber(query.powerKw, 1.5, 0.1, 100);
   let advice: Advice;
+  let prices: PriceSchedule;
   let property: EnergyProperty;
   let consumption: PropertyConsumption;
 
   try {
-    [advice, property, consumption] = await Promise.all([
+    [advice, prices, property, consumption] = await Promise.all([
       api<Advice>("/api/energy/advice"),
+      api<PriceSchedule>("/api/energy/prices"),
       api<EnergyProperty>("/api/energy/property"),
       api<PropertyConsumption>("/api/energy/property/consumption?days=7"),
     ]);
@@ -330,6 +431,10 @@ export default async function DashboardPage({
 
   const activeConnection = property.gridConnections.find(
     (connection) => connection.providerHomeId === advice.homeId,
+  );
+  const curve = priceCurve(
+    prices.today,
+    advice.current?.startsAt ?? prices.current?.startsAt ?? null,
   );
   const signal = signalText(advice.recommendation.action);
   const allPeaksInactive =
@@ -428,6 +533,222 @@ export default async function DashboardPage({
             </small>
           </article>
         </section>
+
+        {curve ? (
+          <section className="section price-curve-section">
+            <div className="section-heading price-curve-heading">
+              <div>
+                <span className="kicker">TODAY&apos;S PRICE CURVE</span>
+                <h2>Quarter-hour electricity price</h2>
+              </div>
+              <small>
+                {activeConnection?.priceAreaCode ?? "SE3"} · 15 min ·{" "}
+                {curve.values.length} slots
+              </small>
+            </div>
+
+            <article className="price-curve-card">
+              <div className="price-curve-stats">
+                <div>
+                  <span className="label">NOW</span>
+                  <strong>
+                    {advice.current
+                      ? money(advice.current.total, advice.current.currency)
+                      : "—"}
+                  </strong>
+                </div>
+                <div>
+                  <span className="label">LOW</span>
+                  <strong>
+                    {money(
+                      curve.rawMin,
+                      curve.values[0]?.currency ?? "SEK",
+                    )}
+                  </strong>
+                </div>
+                <div>
+                  <span className="label">AVERAGE</span>
+                  <strong>
+                    {money(
+                      curve.average,
+                      curve.values[0]?.currency ?? "SEK",
+                    )}
+                  </strong>
+                </div>
+                <div>
+                  <span className="label">HIGH</span>
+                  <strong>
+                    {money(
+                      curve.rawMax,
+                      curve.values[0]?.currency ?? "SEK",
+                    )}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="price-chart-wrap">
+                <svg
+                  aria-label="Quarter-hour electricity price curve for today"
+                  className="price-chart"
+                  preserveAspectRatio="none"
+                  role="img"
+                  viewBox={`0 0 ${curve.width} ${curve.height}`}
+                >
+                  <defs>
+                    <linearGradient
+                      id="priceArea"
+                      x1="0"
+                      x2="0"
+                      y1="0"
+                      y2="1"
+                    >
+                      <stop offset="0%" stopColor="currentColor" stopOpacity="0.28" />
+                      <stop offset="100%" stopColor="currentColor" stopOpacity="0.015" />
+                    </linearGradient>
+                    <linearGradient
+                      id="priceLine"
+                      x1="0"
+                      x2="1"
+                      y1="0"
+                      y2="0"
+                    >
+                      <stop offset="0%" stopColor="var(--green)" />
+                      <stop offset="58%" stopColor="var(--green)" />
+                      <stop offset="78%" stopColor="var(--amber)" />
+                      <stop offset="100%" stopColor="var(--red)" />
+                    </linearGradient>
+                  </defs>
+
+                  {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+                    const y =
+                      curve.top + curve.plotHeight * fraction;
+                    return (
+                      <line
+                        className="price-grid-line"
+                        key={fraction}
+                        x1={curve.left}
+                        x2={curve.width - curve.right}
+                        y1={y}
+                        y2={y}
+                      />
+                    );
+                  })}
+
+                  <line
+                    className="price-average-line"
+                    x1={curve.left}
+                    x2={curve.width - curve.right}
+                    y1={curve.yFor(curve.average)}
+                    y2={curve.yFor(curve.average)}
+                  />
+
+                  <line
+                    className="price-zero-line"
+                    x1={curve.left}
+                    x2={curve.width - curve.right}
+                    y1={curve.baselineY}
+                    y2={curve.baselineY}
+                  />
+
+                  <path
+                    className="price-area"
+                    d={curve.area}
+                    fill="url(#priceArea)"
+                  />
+
+                  {curve.values.map((slot, index) => {
+                    const x = curve.xFor(index);
+                    const y = curve.yFor(slot.total);
+                    const nextX =
+                      index === curve.values.length - 1
+                        ? curve.width - curve.right
+                        : curve.xFor(index + 1);
+                    const barWidth = Math.max(2, nextX - x - 1);
+                    const barY = Math.min(y, curve.baselineY);
+                    const barHeight = Math.max(
+                      1,
+                      Math.abs(curve.baselineY - y),
+                    );
+
+                    return (
+                      <rect
+                        className={`price-slot-bar price-slot-${priceLevelClass(
+                          slot.level,
+                        )}${
+                          index === curve.currentIndex
+                            ? " price-slot-current"
+                            : ""
+                        }`}
+                        height={barHeight}
+                        key={slot.startsAt}
+                        width={barWidth}
+                        x={x}
+                        y={barY}
+                      >
+                        <title>
+                          {formatTime(slot.startsAt)} ·{" "}
+                          {money(slot.total, slot.currency)}
+                        </title>
+                      </rect>
+                    );
+                  })}
+
+                  <polyline
+                    className="price-line"
+                    fill="none"
+                    points={curve.points}
+                    stroke="url(#priceLine)"
+                  />
+
+                  {curve.currentIndex >= 0 ? (
+                    <>
+                      <line
+                        className="price-now-line"
+                        x1={curve.xFor(curve.currentIndex)}
+                        x2={curve.xFor(curve.currentIndex)}
+                        y1={curve.top}
+                        y2={curve.height - curve.bottom}
+                      />
+                      <circle
+                        className="price-now-dot"
+                        cx={curve.xFor(curve.currentIndex)}
+                        cy={curve.yFor(
+                          curve.values[curve.currentIndex]?.total ?? 0,
+                        )}
+                        r="6"
+                      />
+                    </>
+                  ) : null}
+
+                  {["00", "06", "12", "18", "24"].map((label, index) => (
+                    <text
+                      className="price-axis-label"
+                      key={label}
+                      textAnchor={
+                        index === 0
+                          ? "start"
+                          : index === 4
+                            ? "end"
+                            : "middle"
+                      }
+                      x={curve.left + (curve.plotWidth * index) / 4}
+                      y={curve.height - 8}
+                    >
+                      {label}
+                    </text>
+                  ))}
+                </svg>
+              </div>
+
+              <div className="price-curve-legend">
+                <span><i className="price-dot cheap" /> cheaper</span>
+                <span><i className="price-dot normal" /> normal</span>
+                <span><i className="price-dot expensive" /> expensive</span>
+                <span className="price-average-note">dashed = daily average</span>
+              </div>
+            </article>
+          </section>
+        ) : null}
 
         <section className="section">
           <div className="section-heading">
