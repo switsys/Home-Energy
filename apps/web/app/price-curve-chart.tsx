@@ -21,6 +21,9 @@ type InteractivePriceCurveProps = Readonly<{
   priceAreaCode: string | null;
   peakRiskSlots: readonly PeakRiskSlot[];
   gridScheduleAvailable: boolean;
+  gridConnectionName: string | null;
+  loadMinutes: number;
+  loadPowerKw: number;
 }>;
 
 const STOCKHOLM = "Europe/Stockholm";
@@ -55,6 +58,83 @@ function priceLevelClass(level: string | null): string {
     default:
       return "normal";
   }
+}
+
+type WindowEstimate = Readonly<{
+  startsAt: string;
+  averagePrice: number;
+  electricityCost: number;
+  energyKwh: number;
+  currency: string;
+}>;
+
+function signedPriceDifference(
+  difference: number,
+  currency: string,
+  baselineLabel: string,
+): string {
+  if (Math.abs(difference) < 0.005) return `Same as ${baselineLabel}`;
+  const direction = difference < 0 ? "below" : "above";
+  return `${money(Math.abs(difference), currency)}/kWh ${direction} ${baselineLabel}`;
+}
+
+function estimateLoadWindow(
+  values: readonly PriceSlot[],
+  startIndex: number,
+  minutes: number,
+  powerKw: number,
+): WindowEstimate | null {
+  if (
+    startIndex < 0 ||
+    startIndex >= values.length ||
+    !Number.isFinite(powerKw) ||
+    powerKw <= 0 ||
+    !Number.isFinite(minutes) ||
+    minutes <= 0
+  ) {
+    return null;
+  }
+
+  const first = values[startIndex];
+  if (first === undefined) return null;
+
+  const slotMs = 15 * 60 * 1000;
+  let expectedStartsAtMs = Date.parse(first.startsAt);
+  if (!Number.isFinite(expectedStartsAtMs)) return null;
+
+  let remainingMinutes = minutes;
+  let electricityCost = 0;
+  let weightedPriceMinutes = 0;
+  let energyKwh = 0;
+
+  for (let index = startIndex; remainingMinutes > 0; index += 1) {
+    const slot = values[index];
+    if (slot === undefined || slot.currency !== first.currency) return null;
+
+    const startsAtMs = Date.parse(slot.startsAt);
+    if (
+      !Number.isFinite(startsAtMs) ||
+      Math.abs(startsAtMs - expectedStartsAtMs) > 1000
+    ) {
+      return null;
+    }
+
+    const durationMinutes = Math.min(15, remainingMinutes);
+    const slotEnergyKwh = powerKw * (durationMinutes / 60);
+    electricityCost += slot.total * slotEnergyKwh;
+    weightedPriceMinutes += slot.total * durationMinutes;
+    energyKwh += slotEnergyKwh;
+    remainingMinutes -= durationMinutes;
+    expectedStartsAtMs += slotMs;
+  }
+
+  return {
+    startsAt: first.startsAt,
+    averagePrice: weightedPriceMinutes / minutes,
+    electricityCost,
+    energyKwh,
+    currency: first.currency,
+  };
 }
 
 function buildCurve(
@@ -173,6 +253,9 @@ export function InteractivePriceCurve({
   priceAreaCode,
   peakRiskSlots,
   gridScheduleAvailable,
+  gridConnectionName,
+  loadMinutes,
+  loadPowerKw,
 }: InteractivePriceCurveProps) {
   const curve = useMemo(
     () => buildCurve(slots, currentStartsAt),
@@ -200,6 +283,55 @@ export function InteractivePriceCurve({
       : peakRiskSlots.find(
           (slot) => Date.parse(slot.startsAt) === selectedStartsAtMs,
         ) ?? null;
+  const selectedEstimate =
+    selectedIndex === null
+      ? null
+      : estimateLoadWindow(
+          activeCurve.values,
+          selectedIndex,
+          loadMinutes,
+          loadPowerKw,
+        );
+  const firstAvailableIndex =
+    activeCurve.currentIndex >= 0 ? activeCurve.currentIndex : 0;
+  const bestEstimate = activeCurve.values.reduce<WindowEstimate | null>(
+    (best, _slot, index) => {
+      if (index < firstAvailableIndex) return best;
+      const estimate = estimateLoadWindow(
+        activeCurve.values,
+        index,
+        loadMinutes,
+        loadPowerKw,
+      );
+      if (estimate === null) return best;
+      return best === null || estimate.electricityCost < best.electricityCost
+        ? estimate
+        : best;
+    },
+    null,
+  );
+  const selectedIsPast =
+    selectedIndex !== null &&
+    activeCurve.currentIndex >= 0 &&
+    selectedIndex < activeCurve.currentIndex;
+  const versusAverage =
+    selected === null ? null : selected.total - activeCurve.average;
+  const versusNow =
+    selected === null ||
+    currentPrice === null ||
+    selected.currency !== currentPrice.currency
+      ? null
+      : selected.total - currentPrice.total;
+  const averagePercent =
+    selected !== null && activeCurve.average > 0.01
+      ? ((selected.total - activeCurve.average) / activeCurve.average) * 100
+      : null;
+  const selectedSavings =
+    selectedEstimate !== null &&
+    bestEstimate !== null &&
+    selectedEstimate.currency === bestEstimate.currency
+      ? selectedEstimate.electricityCost - bestEstimate.electricityCost
+      : null;
 
   function selectFromClientX(clientX: number, element: HTMLElement) {
     const rect = element.getBoundingClientRect();
@@ -284,7 +416,7 @@ export function InteractivePriceCurve({
         </div>
 
         <div
-          aria-label="Interactive quarter-hour electricity price activeCurve. Drag across the chart or use left and right arrow keys to inspect prices."
+          aria-label="Interactive quarter-hour electricity price curve. Drag across the chart or use left and right arrow keys to inspect prices."
           className="price-chart-interactive"
           onKeyDown={(event) => {
             if (event.key === "ArrowLeft") {
@@ -340,7 +472,9 @@ export function InteractivePriceCurve({
                   : "price slot"}
                 {selectedPeak
                   ? ` · effect charge ${selectedPeak.demandRatePerKwMonth} SEK/kW/month`
-                  : ""}
+                  : gridScheduleAvailable
+                    ? " · no effect charge"
+                    : ""}
               </small>
             </div>
           ) : null}
@@ -560,6 +694,134 @@ export function InteractivePriceCurve({
             </svg>
           </div>
         </div>
+
+        {selected ? (
+          <div className="energy-lens" aria-live="polite">
+            <div className="energy-lens-heading">
+              <div>
+                <span className="label">ENERGY LENS</span>
+                <strong>{formatTime(selected.startsAt)}</strong>
+              </div>
+              <small>
+                {gridConnectionName ?? "Primary price connection"}
+              </small>
+            </div>
+
+            <div className="energy-lens-grid">
+              <div>
+                <span>VS DAILY AVERAGE</span>
+                <strong>
+                  {versusAverage === null
+                    ? "—"
+                    : signedPriceDifference(
+                        versusAverage,
+                        selected.currency,
+                        "today's average",
+                      )}
+                </strong>
+                <small>
+                  {averagePercent === null
+                    ? "Absolute comparison"
+                    : `${Math.abs(averagePercent).toFixed(0)}% ${
+                        averagePercent < 0 ? "cheaper" : "more expensive"
+                      }`}
+                </small>
+              </div>
+
+              <div>
+                <span>VS NOW</span>
+                <strong>
+                  {versusNow === null
+                    ? "—"
+                    : signedPriceDifference(
+                        versusNow,
+                        selected.currency,
+                        "now",
+                      )}
+                </strong>
+                <small>
+                  {currentPrice
+                    ? `Now ${money(currentPrice.total, currentPrice.currency)}/kWh`
+                    : "Current price unavailable"}
+                </small>
+              </div>
+
+              <div>
+                <span>PEAK RISK</span>
+                <strong>
+                  {selectedPeak
+                    ? `ACTIVE · ${selectedPeak.demandRatePerKwMonth} SEK/kW/month`
+                    : gridScheduleAvailable
+                      ? "INACTIVE"
+                      : "UNKNOWN"}
+                </strong>
+                <small>
+                  {selectedPeak
+                    ? "Effect-charge window"
+                    : gridScheduleAvailable
+                      ? "No effect-charge window at this time"
+                      : "Grid tariff schedule unavailable"}
+                </small>
+              </div>
+
+              <div>
+                <span>SELECTED LOAD</span>
+                <strong>
+                  {selectedEstimate
+                    ? money(
+                        selectedEstimate.electricityCost,
+                        selectedEstimate.currency,
+                      )
+                    : "—"}
+                </strong>
+                <small>
+                  {selectedEstimate
+                    ? `${loadPowerKw.toFixed(1)} kW × ${loadMinutes} min · electricity price only`
+                    : `Not enough remaining slots for ${loadMinutes} min`}
+                </small>
+              </div>
+            </div>
+
+            {selectedEstimate && bestEstimate ? (
+              <div className="energy-lens-advice">
+                {selectedIsPast ? (
+                  <>
+                    <span>PAST SLOT</span>
+                    <strong>
+                      Best future start {formatTime(bestEstimate.startsAt)}
+                    </strong>
+                    <small>
+                      The selected slot has already passed. Future comparison is
+                      based on the same {loadPowerKw.toFixed(1)} kW ×{" "}
+                      {loadMinutes} min load.
+                    </small>
+                  </>
+                ) : selectedSavings !== null && selectedSavings > 0.005 ? (
+                  <>
+                    <span>BETTER WINDOW</span>
+                    <strong>
+                      {formatTime(bestEstimate.startsAt)} · save{" "}
+                      {money(selectedSavings, selectedEstimate.currency)}
+                    </strong>
+                    <small>
+                      Same {loadPowerKw.toFixed(1)} kW × {loadMinutes} min load,
+                      electricity price only.
+                    </small>
+                  </>
+                ) : (
+                  <>
+                    <span>WINDOW CHECK</span>
+                    <strong>Best available future start for this load</strong>
+                    <small>
+                      No cheaper complete {loadMinutes}-minute window remains in
+                      today&apos;s price schedule.
+                    </small>
+                  </>
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="price-curve-legend">
           <span><i className="price-dot cheap" /> cheaper</span>

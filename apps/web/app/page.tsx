@@ -473,7 +473,10 @@ export default async function DashboardPage({
           currentStartsAt={
             advice.current?.startsAt ?? prices.current?.startsAt ?? null
           }
+          gridConnectionName={activeConnection?.name ?? null}
           gridScheduleAvailable={gridSchedule !== null}
+          loadMinutes={plannerMinutes}
+          loadPowerKw={plannerPowerKw}
           peakRiskSlots={peakRiskSlots}
           priceAreaCode={activeConnection?.priceAreaCode ?? null}
           slots={prices.today}
