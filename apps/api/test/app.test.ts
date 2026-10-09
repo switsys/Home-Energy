@@ -447,6 +447,64 @@ describe("Home-Energy API", () => {
     });
   });
 
+  it("aggregates consumption across both grid connections without collapsing their identities", async () => {
+    const multiHomeProvider: EnergyProvider = {
+      ...provider,
+      homes: async () => [
+        { id: "home-1", name: "Li-Erikes Gård" },
+        { id: "home-2", name: "Hus2/3" },
+      ],
+      consumption: async (homeId, days) => ({
+        provider: "fake",
+        homeId,
+        samples: [],
+        count: days,
+        totalConsumption: homeId === "home-1" ? 42 : 18,
+        totalCost: homeId === "home-1" ? 84 : 36,
+        currency: "SEK",
+      }),
+    };
+    const property = buildEnergyProperty({
+      id: "li-erikes",
+      name: "Li-Erikes Gård",
+      providerId: "fake",
+      homes: await multiHomeProvider.homes(),
+    });
+    const app = buildApp({
+      provider: multiHomeProvider,
+      apiKey: "secret",
+      property,
+    });
+
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/property/consumption?days=7",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      propertyId: "li-erikes",
+      days: 7,
+      gridConnectionCount: 2,
+      totalConsumption: 60,
+      totalCost: 120,
+      currency: "SEK",
+      connections: [
+        {
+          gridConnectionId: "fake:home-1",
+          totalConsumption: 42,
+          totalCost: 84,
+        },
+        {
+          gridConnectionId: "fake:home-2",
+          totalConsumption: 18,
+          totalCost: 36,
+        },
+      ],
+    });
+  });
+
   it("plans device automation against the grid connection mapped to that device", async () => {
     const prices: PriceSchedule["today"] = [
       "10:00",
