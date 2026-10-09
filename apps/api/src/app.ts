@@ -2,11 +2,14 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import {
   buildDemandPeakReport,
   buildDeviceAutomationPreview,
+  buildEnergyProperty,
   buildEnergyAdvice,
   buildLoadPlan,
+  findGridConnection,
   resolveGridTariff,
   type DemandPeakReport,
   type EnergyDeviceProvider,
+  type EnergyProperty,
   type EnergyProvider,
   type GridTariff,
   type PriceSchedule,
@@ -32,6 +35,7 @@ export type AppOptions = Readonly<{
   defaultHomeId?: string | null;
   gridTariff?: GridTariff | null;
   deviceProvider?: EnergyDeviceProvider | null;
+  property?: EnergyProperty | null;
 }>;
 
 function configured(value: string | null | undefined): string | null {
@@ -122,6 +126,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       ? resolveGridTariff(configured(process.env.HOME_ENERGY_GRID_TARIFF))
       : options.gridTariff;
   const deviceProvider = options.deviceProvider ?? null;
+  const explicitProperty = options.property ?? null;
+  const propertyId =
+    configured(process.env.HOME_ENERGY_PROPERTY_ID) ?? "home";
+  const propertyName =
+    configured(process.env.HOME_ENERGY_PROPERTY_NAME) ?? "Home";
   const requireAccess = accessGuard(apiKey);
 
   let homesCache: TimedCache<Awaited<ReturnType<EnergyProvider["homes"]>>> | null =
@@ -147,6 +156,23 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const first = (await homes())[0];
     if (first === undefined) throw new Error("No homes are visible to provider");
     return first.id;
+  }
+
+  async function energyProperty(): Promise<EnergyProperty> {
+    if (explicitProperty !== null) return explicitProperty;
+    if (provider === null) throw new Error("No energy provider is configured");
+
+    const providerHomes = await homes();
+    return buildEnergyProperty({
+      id: propertyId,
+      name:
+        propertyName === "Home"
+          ? providerHomes[0]?.name?.trim() || propertyName
+          : propertyName,
+      providerId: provider.id,
+      homes: providerHomes,
+      gridTariffId: gridTariff?.id ?? null,
+    });
   }
 
   async function prices(homeId: string): Promise<PriceSchedule> {
@@ -200,6 +226,18 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     provider: provider?.id ?? null,
     gridTariff: gridTariff?.id ?? null,
   }));
+
+  app.get(
+    "/api/energy/property",
+    { preHandler: requireAccess },
+    async (_request, reply) => {
+      try {
+        return await energyProperty();
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
 
   app.get(
     "/api/energy/homes",
@@ -317,10 +355,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     },
   );
 
-  app.get<{ Querystring: { homeId?: string } }>(
+  app.get(
     "/api/energy/devices",
     { preHandler: requireAccess },
-    async (request, reply) => {
+    async (_request, reply) => {
       if (deviceProvider === null) {
         return reply.status(501).send({
           error: "device_provider_not_configured",
@@ -328,11 +366,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       }
 
       try {
-        const homeId = await resolveHomeId(request.query.homeId);
+        const property = await energyProperty();
         return {
           provider: deviceProvider.id,
-          homeId,
-          devices: await deviceProvider.devices(homeId),
+          propertyId: property.id,
+          devices: await deviceProvider.devices(property.id),
         };
       } catch (error) {
         return unavailable(reply, error);
@@ -341,7 +379,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   );
 
   app.post<{
-    Body: { deviceId?: string; homeId?: string; minutes?: number };
+    Body: { deviceId?: string; minutes?: number };
   }>(
     "/api/energy/automation/preview",
     { preHandler: requireAccess },
@@ -368,12 +406,28 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       }
 
       try {
-        const homeId = await resolveHomeId(request.body?.homeId);
-        const devices = await deviceProvider.devices(homeId);
+        const property = await energyProperty();
+        const devices = await deviceProvider.devices(property.id);
         const device = devices.find((item) => item.id === deviceId);
         if (device === undefined) {
           return reply.status(404).send({
             error: "device_not_found",
+          });
+        }
+
+        if (device.gridConnectionId === null) {
+          return reply.status(409).send({
+            error: "device_grid_connection_not_configured",
+          });
+        }
+
+        const connection = findGridConnection(
+          property,
+          device.gridConnectionId,
+        );
+        if (connection === null) {
+          return reply.status(409).send({
+            error: "device_grid_connection_not_found",
           });
         }
 
@@ -387,6 +441,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
           });
         }
 
+        const homeId = connection.providerHomeId;
         const peakReport = await peakReportForPlanning(homeId);
         const plan = buildLoadPlan(
           await prices(homeId),
@@ -401,6 +456,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
         return {
           provider: deviceProvider.id,
+          propertyId: property.id,
+          gridConnectionId: connection.id,
           homeId,
           plan,
           automation: buildDeviceAutomationPreview(plan, device),
