@@ -305,6 +305,86 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   );
 
   app.get(
+    "/api/energy/property/grid-peaks",
+    { preHandler: requireAccess },
+    async (_request, reply) => {
+      if (gridTariff === null) {
+        return reply.status(503).send({
+          error: "grid_tariff_not_configured",
+        });
+      }
+
+      try {
+        if (provider === null) throw new Error("No energy provider is configured");
+
+        const property = await energyProperty();
+        const now = clock();
+        const emptyReport = buildDemandPeakReport([], gridTariff, now);
+
+        if (
+          emptyReport.status !== "inactive" &&
+          provider.hourlyConsumption === undefined
+        ) {
+          return reply.status(501).send({
+            error: "hourly_consumption_unsupported",
+          });
+        }
+
+        const connections = await Promise.all(
+          property.gridConnections.map(async (connection) => {
+            const report =
+              emptyReport.status === "inactive"
+                ? emptyReport
+                : buildDemandPeakReport(
+                    (
+                      await provider.hourlyConsumption!(
+                        connection.providerHomeId,
+                        31 * 24,
+                      )
+                    ).samples,
+                    gridTariff,
+                    now,
+                  );
+
+            return {
+              gridConnectionId: connection.id,
+              billingScopeId: connection.billingScopeId,
+              name: connection.name,
+              providerHomeId: connection.providerHomeId,
+              ...report,
+            };
+          }),
+        );
+
+        const complete = connections.every(
+          (connection) =>
+            connection.status === "inactive" ||
+            (connection.status === "estimated" &&
+              connection.estimatedDemandCharge !== null),
+        );
+
+        return {
+          propertyId: property.id,
+          billingMode: "per_connection",
+          currency: commonCurrency(
+            connections.map((connection) => connection.currency),
+          ),
+          estimatedDemandChargeTotal: complete
+            ? connections.reduce(
+                (sum, connection) =>
+                  sum + (connection.estimatedDemandCharge ?? 0),
+                0,
+              )
+            : null,
+          connections,
+        };
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get(
     "/api/energy/homes",
     { preHandler: requireAccess },
     async (_request, reply) => {
