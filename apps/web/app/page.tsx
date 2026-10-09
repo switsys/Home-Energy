@@ -13,6 +13,22 @@ type PriceSchedule = Readonly<{
   tomorrow: readonly PriceSlot[];
 }>;
 
+type GridScheduleSlot = Readonly<{
+  startsAt: string;
+  loadPeriod: "low" | "high";
+  season: "summer" | "winter";
+  demandRatePerKwMonth: number;
+}>;
+
+type GridSchedule = Readonly<{
+  provider: string | null;
+  homeId: string;
+  tariffId: string;
+  label: string;
+  today: readonly GridScheduleSlot[];
+  tomorrow: readonly GridScheduleSlot[];
+}>;
+
 type PriceWindow = Readonly<{
   minutes: number;
   startsAt: string;
@@ -438,6 +454,7 @@ export default async function DashboardPage({
   let loadPlan: LoadPlan | null = null;
   let loadPlanError: string | null = null;
   let propertyPeaks: PropertyGridPeaks | null = null;
+  let gridSchedule: GridSchedule | null = null;
 
   try {
     const params = new URLSearchParams({
@@ -458,6 +475,12 @@ export default async function DashboardPage({
     propertyPeaks = null;
   }
 
+  try {
+    gridSchedule = await api<GridSchedule>("/api/energy/grid-schedule");
+  } catch {
+    gridSchedule = null;
+  }
+
   const activeConnection = property.gridConnections.find(
     (connection) => connection.providerHomeId === advice.homeId,
   );
@@ -465,6 +488,10 @@ export default async function DashboardPage({
     prices.today,
     advice.current?.startsAt ?? prices.current?.startsAt ?? null,
   );
+  const peakRiskSlots =
+    gridSchedule?.today.filter(
+      (slot) => slot.loadPeriod === "high" && slot.demandRatePerKwMonth > 0,
+    ) ?? [];
   const signal = signalText(advice.recommendation.action);
   const allPeaksInactive =
     propertyPeaks?.connections.every(
@@ -650,6 +677,33 @@ export default async function DashboardPage({
                     </linearGradient>
                   </defs>
 
+                  {peakRiskSlots.map((slot) => {
+                    const startsAtMs = Date.parse(slot.startsAt);
+                    if (!Number.isFinite(startsAtMs)) return null;
+                    const x = curve.xForTime(startsAtMs);
+                    const endX = curve.xForTime(
+                      Math.min(
+                        startsAtMs + curve.slotMs,
+                        curve.domainEndMs,
+                      ),
+                    );
+                    return (
+                      <rect
+                        className="price-peak-band"
+                        height={curve.plotHeight}
+                        key={slot.startsAt}
+                        width={Math.max(1, endX - x)}
+                        x={x}
+                        y={curve.top}
+                      >
+                        <title>
+                          Effect-charge window ·{" "}
+                          {slot.demandRatePerKwMonth} SEK/kW/month
+                        </title>
+                      </rect>
+                    );
+                  })}
+
                   {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
                     const y =
                       curve.top + curve.plotHeight * fraction;
@@ -791,6 +845,16 @@ export default async function DashboardPage({
                 <span><i className="price-dot cheap" /> cheaper</span>
                 <span><i className="price-dot normal" /> normal</span>
                 <span><i className="price-dot expensive" /> expensive</span>
+                {peakRiskSlots.length > 0 ? (
+                  <span>
+                    <i className="price-dot peak-risk" />
+                    effect-charge window
+                  </span>
+                ) : gridSchedule ? (
+                  <span className="price-peak-inactive">
+                    effect charge inactive today
+                  </span>
+                ) : null}
                 <span className="price-average-note">dashed = daily average</span>
               </div>
             </article>
