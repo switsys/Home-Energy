@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { faluElnat2026, type EnergyProvider, type PriceSchedule } from "@home-energy/core";
+import {
+  faluElnat2026,
+  type EnergyProvider,
+  type HomeDeviceGateway,
+  type PriceSchedule,
+} from "@home-energy/core";
 import { buildApp } from "../src/app.js";
 
 const schedule: PriceSchedule = {
@@ -45,6 +50,7 @@ describe("Home-Energy API", () => {
       protected: true,
       provider: "fake",
       gridTariff: null,
+      deviceGateway: null,
     });
   });
 
@@ -377,6 +383,117 @@ describe("Home-Energy API", () => {
           },
         },
       },
+    });
+  });
+
+  it("exposes a configured home device gateway and executes commands", async () => {
+    let received:
+      | Readonly<{
+          deviceId: string;
+          trait: string;
+          command: string;
+        }>
+      | null = null;
+
+    const deviceGateway: HomeDeviceGateway = {
+      id: "google-home",
+      devices: async () => [
+        {
+          id: "plug-1",
+          source: "google-home",
+          name: "Workshop plug",
+          room: "Workshop",
+          type: "on-off-plugin-unit",
+          traits: ["on-off"],
+          online: true,
+        },
+      ],
+      state: async (deviceId) =>
+        deviceId === "plug-1"
+          ? {
+              deviceId,
+              observedAt: "2026-10-09T08:00:00.000Z",
+              values: { on: false },
+            }
+          : null,
+      execute: async (command) => {
+        received = {
+          deviceId: command.deviceId,
+          trait: command.trait,
+          command: command.command,
+        };
+        return {
+          deviceId: command.deviceId,
+          accepted: true,
+          completedAt: "2026-10-09T08:00:01.000Z",
+        };
+      },
+    };
+
+    const app = buildApp({
+      provider,
+      apiKey: "secret",
+      defaultHomeId: "home-1",
+      deviceGateway,
+    });
+
+    const devices = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/home/devices",
+    });
+    expect(devices.statusCode).toBe(200);
+    expect(devices.json()).toMatchObject({
+      gateway: "google-home",
+      devices: [{ id: "plug-1", name: "Workshop plug" }],
+    });
+
+    const state = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/home/devices/plug-1/state",
+    });
+    expect(state.statusCode).toBe(200);
+    expect(state.json()).toMatchObject({
+      deviceId: "plug-1",
+      values: { on: false },
+    });
+
+    const command = await app.inject({
+      headers: {
+        "content-type": "application/json",
+        "x-home-energy-key": "secret",
+      },
+      method: "POST",
+      url: "/api/home/devices/plug-1/commands",
+      payload: {
+        trait: "on-off",
+        command: "on",
+      },
+    });
+    expect(command.statusCode).toBe(200);
+    expect(command.json()).toMatchObject({
+      deviceId: "plug-1",
+      accepted: true,
+    });
+    expect(received).toEqual({
+      deviceId: "plug-1",
+      trait: "on-off",
+      command: "on",
+    });
+  });
+
+  it("returns 501 when no home device gateway is configured", async () => {
+    const app = buildApp({ provider, apiKey: "secret" });
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/home/devices",
+    });
+
+    expect(response.statusCode).toBe(501);
+    expect(response.json()).toMatchObject({
+      error: "device_gateway_not_configured",
     });
   });
 

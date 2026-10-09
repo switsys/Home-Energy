@@ -4,3 +4,4 @@ export * from "./planner.js";
 export * from "./grid-tariff.js";
 export * from "./demand-peaks.js";
 export * from "./telemetry.js";
+export * from "./devices.js";
