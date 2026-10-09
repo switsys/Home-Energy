@@ -505,6 +505,84 @@ describe("Home-Energy API", () => {
     });
   });
 
+  it("keeps effect-charge peak histories separate for both grid connections", async () => {
+    const sample = (homeId: string, day: string, consumption: number) => ({
+      from: `2026-11-${day}T09:00:00+01:00`,
+      to: `2026-11-${day}T10:00:00+01:00`,
+      consumption,
+      consumptionUnit: "kWh",
+      unitPrice: null,
+      unitPriceVat: null,
+      cost: null,
+      currency: "SEK",
+    });
+    const multiHomeProvider: EnergyProvider = {
+      ...provider,
+      homes: async () => [
+        { id: "home-1", name: "Li-Erikes Gård" },
+        { id: "home-2", name: "Hus2/3" },
+      ],
+      hourlyConsumption: async (homeId) => {
+        const values = homeId === "home-1" ? [5, 7, 6] : [2, 4, 3];
+        return {
+          provider: "fake",
+          homeId,
+          samples: [
+            sample(homeId, "02", values[0] ?? 0),
+            sample(homeId, "03", values[1] ?? 0),
+            sample(homeId, "04", values[2] ?? 0),
+          ],
+          count: 3,
+          totalConsumption: values.reduce((sum, value) => sum + value, 0),
+          totalCost: null,
+          currency: "SEK",
+        };
+      },
+    };
+    const property = buildEnergyProperty({
+      id: "li-erikes",
+      name: "Li-Erikes Gård",
+      providerId: "fake",
+      homes: await multiHomeProvider.homes(),
+      gridTariffId: "falu-elnat-2026",
+    });
+    const app = buildApp({
+      provider: multiHomeProvider,
+      apiKey: "secret",
+      property,
+      gridTariff: faluElnat2026,
+      clock: () => new Date("2026-11-10T12:00:00+01:00"),
+    });
+
+    const response = await app.inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/property/grid-peaks",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      propertyId: "li-erikes",
+      billingMode: "per_connection",
+      currency: "SEK",
+      estimatedDemandChargeTotal: 675,
+      connections: [
+        {
+          gridConnectionId: "fake:home-1",
+          billingScopeId: "fake:home-1",
+          trackedAveragePeakKw: 6,
+          estimatedDemandCharge: 450,
+        },
+        {
+          gridConnectionId: "fake:home-2",
+          billingScopeId: "fake:home-2",
+          trackedAveragePeakKw: 3,
+          estimatedDemandCharge: 225,
+        },
+      ],
+    });
+  });
+
   it("plans device automation against the grid connection mapped to that device", async () => {
     const prices: PriceSchedule["today"] = [
       "10:00",
