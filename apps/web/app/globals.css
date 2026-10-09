@@ -639,3 +639,10 @@ footer {
 .connection-active strong {
   color: var(--green);
 }
+
+
+@media (max-width: 620px) {
+  .connection-grid {
+    grid-template-columns: 1fr;
+  }
+}
