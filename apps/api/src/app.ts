@@ -1,10 +1,12 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
   buildDemandPeakReport,
+  buildDeviceAutomationPreview,
   buildEnergyAdvice,
   buildLoadPlan,
   resolveGridTariff,
   type DemandPeakReport,
+  type EnergyDeviceProvider,
   type EnergyProvider,
   type GridTariff,
   type PriceSchedule,
@@ -29,6 +31,7 @@ export type AppOptions = Readonly<{
   apiKey?: string | null;
   defaultHomeId?: string | null;
   gridTariff?: GridTariff | null;
+  deviceProvider?: EnergyDeviceProvider | null;
 }>;
 
 function configured(value: string | null | undefined): string | null {
@@ -118,6 +121,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     options.gridTariff === undefined
       ? resolveGridTariff(configured(process.env.HOME_ENERGY_GRID_TARIFF))
       : options.gridTariff;
+  const deviceProvider = options.deviceProvider ?? null;
   const requireAccess = accessGuard(apiKey);
 
   let homesCache: TimedCache<Awaited<ReturnType<EnergyProvider["homes"]>>> | null =
@@ -306,6 +310,100 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
           provider: provider.id,
           homeId,
           ...buildDemandPeakReport(report.samples, gridTariff, now),
+        };
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get<{ Querystring: { homeId?: string } }>(
+    "/api/energy/devices",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      if (deviceProvider === null) {
+        return reply.status(501).send({
+          error: "device_provider_not_configured",
+        });
+      }
+
+      try {
+        const homeId = await resolveHomeId(request.query.homeId);
+        return {
+          provider: deviceProvider.id,
+          homeId,
+          devices: await deviceProvider.devices(homeId),
+        };
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Body: { deviceId?: string; homeId?: string; minutes?: number };
+  }>(
+    "/api/energy/automation/preview",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      if (deviceProvider === null) {
+        return reply.status(501).send({
+          error: "device_provider_not_configured",
+        });
+      }
+
+      const deviceId = configured(request.body?.deviceId);
+      if (deviceId === null) {
+        return reply.status(400).send({
+          error: "invalid_device_id",
+        });
+      }
+
+      const minutes = request.body?.minutes ?? 120;
+      if (!Number.isInteger(minutes) || minutes < 15 || minutes > 24 * 60) {
+        return reply.status(400).send({
+          error: "invalid_minutes",
+          message: "minutes must be an integer from 15 to 1440",
+        });
+      }
+
+      try {
+        const homeId = await resolveHomeId(request.body?.homeId);
+        const devices = await deviceProvider.devices(homeId);
+        const device = devices.find((item) => item.id === deviceId);
+        if (device === undefined) {
+          return reply.status(404).send({
+            error: "device_not_found",
+          });
+        }
+
+        if (
+          device.nominalPowerKw === null ||
+          !Number.isFinite(device.nominalPowerKw) ||
+          device.nominalPowerKw <= 0
+        ) {
+          return reply.status(409).send({
+            error: "device_power_not_configured",
+          });
+        }
+
+        const peakReport = await peakReportForPlanning(homeId);
+        const plan = buildLoadPlan(
+          await prices(homeId),
+          {
+            durationMinutes: minutes,
+            powerKw: device.nominalPowerKw,
+          },
+          clock(),
+          gridTariff,
+          peakReport,
+        );
+
+        return {
+          provider: deviceProvider.id,
+          homeId,
+          plan,
+          automation: buildDeviceAutomationPreview(plan, device),
         };
       } catch (error) {
         return unavailable(reply, error);
