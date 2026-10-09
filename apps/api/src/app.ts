@@ -7,6 +7,7 @@ import {
   type DemandPeakReport,
   type EnergyProvider,
   type GridTariff,
+  type HomeDeviceGateway,
   type PriceSchedule,
   type PriceSlot,
 } from "@home-energy/core";
@@ -29,6 +30,7 @@ export type AppOptions = Readonly<{
   apiKey?: string | null;
   defaultHomeId?: string | null;
   gridTariff?: GridTariff | null;
+  deviceGateway?: HomeDeviceGateway | null;
 }>;
 
 function configured(value: string | null | undefined): string | null {
@@ -118,6 +120,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     options.gridTariff === undefined
       ? resolveGridTariff(configured(process.env.HOME_ENERGY_GRID_TARIFF))
       : options.gridTariff;
+  const deviceGateway = options.deviceGateway ?? null;
   const requireAccess = accessGuard(apiKey);
 
   let homesCache: TimedCache<Awaited<ReturnType<EnergyProvider["homes"]>>> | null =
@@ -195,6 +198,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     protected: apiKey !== null,
     provider: provider?.id ?? null,
     gridTariff: gridTariff?.id ?? null,
+    deviceGateway: deviceGateway?.id ?? null,
   }));
 
   app.get(
@@ -307,6 +311,88 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
           homeId,
           ...buildDemandPeakReport(report.samples, gridTariff, now),
         };
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get(
+    "/api/home/devices",
+    { preHandler: requireAccess },
+    async (_request, reply) => {
+      if (deviceGateway === null) {
+        return reply.status(501).send({
+          error: "device_gateway_not_configured",
+        });
+      }
+
+      try {
+        return {
+          gateway: deviceGateway.id,
+          devices: await deviceGateway.devices(),
+        };
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.get<{ Params: { deviceId: string } }>(
+    "/api/home/devices/:deviceId/state",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      if (deviceGateway === null) {
+        return reply.status(501).send({
+          error: "device_gateway_not_configured",
+        });
+      }
+
+      try {
+        const state = await deviceGateway.state(request.params.deviceId);
+        if (state === null) {
+          return reply.status(404).send({ error: "device_not_found" });
+        }
+        return state;
+      } catch (error) {
+        return unavailable(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { deviceId: string };
+    Body: {
+      trait?: string;
+      command?: string;
+      params?: Record<string, boolean | number | string | null>;
+    };
+  }>(
+    "/api/home/devices/:deviceId/commands",
+    { preHandler: requireAccess },
+    async (request, reply) => {
+      if (deviceGateway === null) {
+        return reply.status(501).send({
+          error: "device_gateway_not_configured",
+        });
+      }
+
+      const trait = configured(request.body?.trait);
+      const command = configured(request.body?.command);
+      if (trait === null || command === null) {
+        return reply.status(400).send({
+          error: "invalid_device_command",
+          message: "trait and command are required",
+        });
+      }
+
+      try {
+        return await deviceGateway.execute({
+          deviceId: request.params.deviceId,
+          trait,
+          command,
+          params: request.body.params,
+        });
       } catch (error) {
         return unavailable(reply, error);
       }
