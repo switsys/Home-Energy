@@ -292,8 +292,11 @@ export function InteractivePriceCurve({
           loadMinutes,
           loadPowerKw,
         );
+  const firstAvailableIndex =
+    activeCurve.currentIndex >= 0 ? activeCurve.currentIndex : 0;
   const bestEstimate = activeCurve.values.reduce<WindowEstimate | null>(
     (best, _slot, index) => {
+      if (index < firstAvailableIndex) return best;
       const estimate = estimateLoadWindow(
         activeCurve.values,
         index,
@@ -307,6 +310,10 @@ export function InteractivePriceCurve({
     },
     null,
   );
+  const selectedIsPast =
+    selectedIndex !== null &&
+    activeCurve.currentIndex >= 0 &&
+    selectedIndex < activeCurve.currentIndex;
   const versusAverage =
     selected === null ? null : selected.total - activeCurve.average;
   const versusNow =
@@ -743,7 +750,7 @@ export function InteractivePriceCurve({
                 <span>PEAK RISK</span>
                 <strong>
                   {selectedPeak
-                    ? `ACTIVE · ${selectedPeak.demandRatePerKwMonth} SEK/kW`
+                    ? `ACTIVE · ${selectedPeak.demandRatePerKwMonth} SEK/kW/month`
                     : gridScheduleAvailable
                       ? "INACTIVE"
                       : "UNKNOWN"}
@@ -777,7 +784,19 @@ export function InteractivePriceCurve({
 
             {selectedEstimate && bestEstimate ? (
               <div className="energy-lens-advice">
-                {selectedSavings !== null && selectedSavings > 0.005 ? (
+                {selectedIsPast ? (
+                  <>
+                    <span>PAST SLOT</span>
+                    <strong>
+                      Best future start {formatTime(bestEstimate.startsAt)}
+                    </strong>
+                    <small>
+                      The selected slot has already passed. Future comparison is
+                      based on the same {loadPowerKw.toFixed(1)} kW ×{" "}
+                      {loadMinutes} min load.
+                    </small>
+                  </>
+                ) : selectedSavings !== null && selectedSavings > 0.005 ? (
                   <>
                     <span>BETTER WINDOW</span>
                     <strong>
@@ -792,7 +811,7 @@ export function InteractivePriceCurve({
                 ) : (
                   <>
                     <span>WINDOW CHECK</span>
-                    <strong>Best available start for this load</strong>
+                    <strong>Best available future start for this load</strong>
                     <small>
                       No cheaper complete {loadMinutes}-minute window remains in
                       today&apos;s price schedule.
