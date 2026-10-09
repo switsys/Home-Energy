@@ -7,7 +7,9 @@ import {
 
 const device: EnergyDevice = {
   id: "charger-1",
-  homeId: "home-1",
+  propertyId: "li-erikes",
+  gridConnectionId: "tibber:home-1",
+  providerScopeId: "google-home-1",
   name: "Garage charger",
   kind: "ev_charger",
   controllable: true,
