@@ -1108,3 +1108,23 @@ footer {
     border-bottom: 1px solid #202922;
   }
 }
+
+
+.energy-lens-hint {
+  margin: 0 16px 4px;
+  padding: 11px 14px;
+  border: 1px dashed #2a382f;
+  border-radius: 10px;
+  color: #78887f;
+  background: rgba(111, 211, 154, .035);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .25px;
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .energy-lens-hint {
+    margin-inline: 9px;
+  }
+}
