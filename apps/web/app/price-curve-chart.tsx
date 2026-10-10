@@ -62,11 +62,14 @@ function priceLevelClass(level: string | null): string {
 
 type WindowEstimate = Readonly<{
   startsAt: string;
+  endsAt: string;
   averagePrice: number;
   electricityCost: number;
   energyKwh: number;
   currency: string;
 }>;
+
+const LOAD_WINDOW_PRESETS = [30, 60, 120] as const;
 
 function signedPriceDifference(
   difference: number,
@@ -130,6 +133,7 @@ function estimateLoadWindow(
 
   return {
     startsAt: first.startsAt,
+    endsAt: new Date(Date.parse(first.startsAt) + minutes * 60 * 1000).toISOString(),
     averagePrice: weightedPriceMinutes / minutes,
     electricityCost,
     energyKwh,
@@ -264,6 +268,7 @@ export function InteractivePriceCurve({
   const [selectedIndex, setSelectedIndex] = useState<number | null>(
     curve && curve.currentIndex >= 0 ? curve.currentIndex : null,
   );
+  const [windowMinutes, setWindowMinutes] = useState(loadMinutes);
   const activePointer = useRef<number | null>(null);
 
   if (curve === null) return null;
@@ -293,9 +298,31 @@ export function InteractivePriceCurve({
       : estimateLoadWindow(
           activeCurve.values,
           selectedIndex,
-          loadMinutes,
+          windowMinutes,
           loadPowerKw,
         );
+  const selectedWindowEndMs =
+    selectedEstimate === null ? null : Date.parse(selectedEstimate.endsAt);
+  const selectedWindowEndX =
+    selectedWindowEndMs === null
+      ? null
+      : activeCurve.xForTime(
+          Math.min(selectedWindowEndMs, activeCurve.domainEndMs),
+        );
+  const selectedWindowPeaks =
+    selectedStartsAtMs === null || selectedWindowEndMs === null
+      ? []
+      : peakRiskSlots.filter((slot) => {
+          const startsAtMs = Date.parse(slot.startsAt);
+          return (
+            startsAtMs >= selectedStartsAtMs &&
+            startsAtMs < selectedWindowEndMs
+          );
+        });
+  const selectedWindowPeakRate = selectedWindowPeaks.reduce(
+    (highest, slot) => Math.max(highest, slot.demandRatePerKwMonth),
+    0,
+  );
   const firstAvailableIndex =
     activeCurve.currentIndex >= 0 ? activeCurve.currentIndex + 1 : 0;
   const bestEstimate = activeCurve.values.reduce<WindowEstimate | null>(
@@ -304,7 +331,7 @@ export function InteractivePriceCurve({
       const estimate = estimateLoadWindow(
         activeCurve.values,
         index,
-        loadMinutes,
+        windowMinutes,
         loadPowerKw,
       );
       if (estimate === null) return best;
@@ -332,6 +359,9 @@ export function InteractivePriceCurve({
     selectedEstimate.currency === bestEstimate.currency
       ? selectedEstimate.electricityCost - bestEstimate.electricityCost
       : null;
+  const windowOptions = Array.from(
+    new Set<number>([...LOAD_WINDOW_PRESETS, loadMinutes]),
+  ).sort((left, right) => left - right);
 
   function selectFromClientX(clientX: number, element: HTMLElement) {
     const rect = element.getBoundingClientRect();
@@ -413,6 +443,37 @@ export function InteractivePriceCurve({
               {money(activeCurve.rawMax, activeCurve.values[0]?.currency ?? "SEK")}
             </strong>
           </div>
+        </div>
+
+        <div className="load-window-toolbar">
+          <div>
+            <span className="label">SLIDING LOAD WINDOW</span>
+            <strong>{loadPowerKw.toFixed(1)} kW planned load</strong>
+          </div>
+          <div
+            aria-label="Load window duration"
+            className="load-window-options"
+            role="group"
+          >
+            {windowOptions.map((minutes) => (
+              <button
+                aria-pressed={windowMinutes === minutes}
+                className={
+                  windowMinutes === minutes ? "load-window-active" : undefined
+                }
+                key={minutes}
+                onClick={() => setWindowMinutes(minutes)}
+                type="button"
+              >
+                {minutes < 60
+                  ? `${minutes} min`
+                  : minutes % 60 === 0
+                    ? `${minutes / 60} h`
+                    : `${minutes} min`}
+              </button>
+            ))}
+          </div>
+          <small>Drag across future slots to move the whole runtime block.</small>
         </div>
 
         <div
@@ -518,6 +579,34 @@ export function InteractivePriceCurve({
                   <stop offset="100%" stopColor="var(--red)" />
                 </linearGradient>
               </defs>
+
+              {selectedEstimate &&
+              selectedX !== null &&
+              selectedWindowEndX !== null ? (
+                <>
+                  <rect
+                    className="price-load-window"
+                    height={activeCurve.plotHeight}
+                    width={Math.max(2, selectedWindowEndX - selectedX)}
+                    x={selectedX}
+                    y={activeCurve.top}
+                  />
+                  <line
+                    className="price-load-window-edge"
+                    x1={selectedX}
+                    x2={selectedX}
+                    y1={activeCurve.top}
+                    y2={activeCurve.height - activeCurve.bottom}
+                  />
+                  <line
+                    className="price-load-window-edge"
+                    x1={selectedWindowEndX}
+                    x2={selectedWindowEndX}
+                    y1={activeCurve.top}
+                    y2={activeCurve.height - activeCurve.bottom}
+                  />
+                </>
+              ) : null}
 
               {peakRiskSlots.map((slot) => {
                 const startsAtMs = Date.parse(slot.startsAt);
@@ -697,7 +786,7 @@ export function InteractivePriceCurve({
 
         {selected === null ? (
           <div className="energy-lens-hint">
-            Drag or tap the curve to open Energy Lens
+            Drag or tap the curve to open Energy Lens · choose a runtime above
           </div>
         ) : null}
 
@@ -706,7 +795,13 @@ export function InteractivePriceCurve({
             <div className="energy-lens-heading">
               <div>
                 <span className="label">ENERGY LENS</span>
-                <strong>{formatTime(selected.startsAt)}</strong>
+                <strong>
+                  {selectedEstimate
+                    ? `${formatTime(selectedEstimate.startsAt)}–${formatTime(
+                        selectedEstimate.endsAt,
+                      )}`
+                    : formatTime(selected.startsAt)}
+                </strong>
               </div>
               <small>
                 {gridConnectionName ?? "Primary price connection"}
@@ -753,20 +848,30 @@ export function InteractivePriceCurve({
               </div>
 
               <div>
-                <span>PEAK RISK</span>
+                <span>WINDOW PEAK RISK</span>
                 <strong>
-                  {selectedPeak
-                    ? `ACTIVE · ${selectedPeak.demandRatePerKwMonth} SEK/kW/month`
-                    : gridScheduleAvailable
+                  {selectedEstimate && selectedWindowPeakRate > 0
+                    ? `ACTIVE · ${selectedWindowPeakRate} SEK/kW/month`
+                    : selectedEstimate && gridScheduleAvailable
                       ? "INACTIVE"
-                      : "UNKNOWN"}
+                      : selectedPeak
+                        ? `ACTIVE · ${selectedPeak.demandRatePerKwMonth} SEK/kW/month`
+                        : gridScheduleAvailable
+                          ? "INACTIVE"
+                          : "UNKNOWN"}
                 </strong>
                 <small>
-                  {selectedPeak
-                    ? "Effect-charge window"
-                    : gridScheduleAvailable
-                      ? "No effect-charge window at this time"
-                      : "Grid tariff schedule unavailable"}
+                  {selectedEstimate && selectedWindowPeaks.length > 0
+                    ? `${selectedWindowPeaks.length} tariff slot${
+                        selectedWindowPeaks.length === 1 ? "" : "s"
+                      } inside the selected runtime`
+                    : selectedEstimate && gridScheduleAvailable
+                      ? "No effect-charge interval inside this runtime"
+                      : selectedPeak
+                        ? "Selected tariff slot is inside an effect-charge window"
+                        : gridScheduleAvailable
+                          ? "No effect-charge window at this time"
+                          : "Grid tariff schedule unavailable"}
                 </small>
               </div>
 
@@ -784,13 +889,13 @@ export function InteractivePriceCurve({
                   {selectedIsElapsed
                     ? "Select a future slot for a complete load estimate"
                     : selectedEstimate
-                      ? `${loadPowerKw.toFixed(1)} kW × ${loadMinutes} min · electricity price only`
-                      : `Not enough remaining slots for ${loadMinutes} min`}
+                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · electricity price only`
+                      : `Not enough remaining slots for ${windowMinutes} min`}
                 </small>
               </div>
             </div>
 
-            {selectedEstimate && bestEstimate ? (
+            {bestEstimate ? (
               <div className="energy-lens-advice">
                 {selectedIsElapsed ? (
                   <>
@@ -799,29 +904,40 @@ export function InteractivePriceCurve({
                       Best complete future start {formatTime(bestEstimate.startsAt)}
                     </strong>
                     <small>
-                      This tariff interval has already started, so it is excluded
-                      from complete future-window estimates.
+                      This tariff interval has already started. Drag the runtime
+                      block into a future slot to compare complete windows.
+                    </small>
+                  </>
+                ) : selectedEstimate === null ? (
+                  <>
+                    <span>WINDOW DOES NOT FIT</span>
+                    <strong>
+                      Best complete future start {formatTime(bestEstimate.startsAt)}
+                    </strong>
+                    <small>
+                      A {windowMinutes}-minute runtime does not fit from the
+                      selected start before today&apos;s schedule ends.
                     </small>
                   </>
                 ) : selectedSavings !== null && selectedSavings > 0.005 ? (
                   <>
                     <span>BETTER WINDOW</span>
                     <strong>
-                      {formatTime(bestEstimate.startsAt)} · save{" "}
-                      {money(selectedSavings, selectedEstimate.currency)}
+                      {formatTime(bestEstimate.startsAt)}–{formatTime(bestEstimate.endsAt)}
+                      {" · "}save {money(selectedSavings, selectedEstimate.currency)}
                     </strong>
                     <small>
-                      Same {loadPowerKw.toFixed(1)} kW × {loadMinutes} min load,
-                      electricity price only.
+                      Same {loadPowerKw.toFixed(1)} kW × {windowMinutes} min load,
+                      electricity price only. Drag the block to compare.
                     </small>
                   </>
                 ) : (
                   <>
                     <span>WINDOW CHECK</span>
-                    <strong>Best available future start for this load</strong>
+                    <strong>Best available future window for this load</strong>
                     <small>
-                      No cheaper complete {loadMinutes}-minute window remains in
-                      today&apos;s price schedule.
+                      No cheaper complete {windowMinutes}-minute window remains
+                      in today&apos;s price schedule.
                     </small>
                   </>
                 )}
