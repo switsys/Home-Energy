@@ -695,6 +695,12 @@ export function InteractivePriceCurve({
           </div>
         </div>
 
+        {selected === null ? (
+          <div className="energy-lens-hint">
+            Drag or tap the curve to open Energy Lens
+          </div>
+        ) : null}
+
         {selected ? (
           <div className="energy-lens" aria-live="polite">
             <div className="energy-lens-heading">
