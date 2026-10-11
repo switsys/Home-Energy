@@ -634,17 +634,19 @@ export default async function DashboardPage({
                     is never merged across the two meters.
                   </p>
                   <small>
-                    {propertyPeaks.connections.length} independent billing scopes
+                    {propertyPeaks.connections.length} independent grid-fee billing scopes
                   </small>
                 </article>
 
                 <div className="peak-grid connection-peak-grid">
-                  {propertyPeaks.connections.map((connection) => (
+                  {propertyPeaks.connections.map((connection, index) => (
                     <article
                       className="peak-card"
                       key={connection.gridConnectionId}
                     >
-                      <span className="label">{connection.name}</span>
+                      <span className="label">
+                        GRID FEE INLET {String.fromCharCode(65 + index)}
+                      </span>
                       <strong>
                         {connection.estimatedDemandCharge === null
                           ? connection.status === "no_data"
