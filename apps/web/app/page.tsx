@@ -1,4 +1,5 @@
 import { InteractivePriceCurve } from "./price-curve-chart";
+import { dashboardPeriodUrl, selectedConsumptionDays } from "./dashboard-period";
 
 type PriceSlot = Readonly<{
   startsAt: string;
@@ -324,6 +325,7 @@ export default async function DashboardPage({
   searchParams,
 }: DashboardPageProps) {
   const query = await searchParams;
+  const consumptionDays = selectedConsumptionDays(query.days);
   const plannerMinutes = Math.round(
     queryNumber(query.minutes, 120, 15, 24 * 60),
   );
@@ -338,7 +340,7 @@ export default async function DashboardPage({
       api<Advice>("/api/energy/advice"),
       api<PriceSchedule>("/api/energy/prices"),
       api<EnergyProperty>("/api/energy/property"),
-      api<PropertyConsumption>("/api/energy/property/consumption?days=7"),
+      api<PropertyConsumption>(`/api/energy/property/consumption?days=${consumptionDays}`),
     ]);
   } catch (error) {
     return (
@@ -369,6 +371,13 @@ export default async function DashboardPage({
       : gridFeeConnections.findIndex(
           (connection) => connection.id === plannerConnection.id,
         );
+  const periodUrl = (days: 7 | 30) =>
+    dashboardPeriodUrl({
+      days,
+      minutes: plannerMinutes,
+      powerKw: plannerPowerKw,
+      homeId: plannerConnection?.providerHomeId ?? null,
+    });
   const plannerInletLabel =
     plannerConnectionIndex < 0
       ? null
@@ -456,11 +465,11 @@ export default async function DashboardPage({
             </span>
             <h1>Energy overview</h1>
             <p>
-              One property view across both metered inlets.
+              One homestead for energy, with independent grid-fee accounting per meter.
             </p>
           </div>
 
-          <a className="refresh" href="/">
+          <a className="refresh" href={periodUrl(consumptionDays)}>
             Refresh
           </a>
         </section>
@@ -498,23 +507,47 @@ export default async function DashboardPage({
           </article>
 
           <article className="card consumption-card">
-            <span className="label">LAST 7 DAYS</span>
+            <div className="consumption-top">
+              <span className="label">COMBINED USAGE · LAST {consumptionDays} DAYS</span>
+              <nav className="consumption-periods" aria-label="Consumption period">
+                {([7, 30] as const).map((days) => (
+                  <a
+                    key={days}
+                    href={periodUrl(days)}
+                    aria-current={consumptionDays === days ? "page" : undefined}
+                  >
+                    {days}D
+                  </a>
+                ))}
+              </nav>
+            </div>
             <strong>
               {consumption.totalConsumption === null
                 ? "—"
                 : `${number(consumption.totalConsumption)} kWh`}
             </strong>
             <p>
-              {consumption.totalCost === null
-                ? "Cost unavailable"
-                : money(
-                    consumption.totalCost,
-                    consumption.currency ?? "SEK",
-                  )}
+              {consumption.totalCost === null || consumption.currency === null
+                ? "Reported cost unavailable"
+                : money(consumption.totalCost, consumption.currency)}
             </p>
             <small>
-              {property.name} total · both parts combined
+              {property.name} total · {consumption.gridConnectionCount} metered
+              {consumption.gridConnectionCount === 1 ? " inlet" : " inlets"}
             </small>
+            {consumption.totalConsumption !== null &&
+            consumption.totalConsumption > 0 &&
+            consumption.totalCost !== null &&
+            consumption.currency !== null ? (
+              <small>
+                Reported cost per kWh:{" "}
+                {money(
+                  consumption.totalCost / consumption.totalConsumption,
+                  consumption.currency,
+                )}
+              </small>
+            ) : null}
+            <small>Grid fees are calculated separately below.</small>
           </article>
         </section>
 
@@ -540,6 +573,7 @@ export default async function DashboardPage({
             </div>
 
             <form className="planner-form" method="get">
+              <input name="days" type="hidden" value={consumptionDays} />
               <label>
                 <span>Minutes</span>
                 <input
