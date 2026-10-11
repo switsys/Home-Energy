@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildEnergyProperty,
   faluElnat2026,
@@ -477,6 +477,84 @@ describe("Home-Energy API", () => {
     });
   });
 
+  it("does not promote the first provider-home label into a multi-home property title", async () => {
+    const groupedProvider: EnergyProvider = {
+      ...provider,
+      homes: async () => [
+        { id: "house-2", name: "Hus 2/3" },
+        { id: "farm", name: "Li-Erikes Gård" },
+      ],
+    };
+    vi.stubEnv("HOME_ENERGY_PROPERTY_NAME", "");
+    try {
+      const response = await buildApp({
+        provider: groupedProvider,
+        apiKey: "secret",
+      }).inject({
+        headers: { "x-home-energy-key": "secret" },
+        method: "GET",
+        url: "/api/energy/property",
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().name).toBe("Home");
+      expect(response.json().gridConnections.map(
+        (connection: { name: string }) => connection.name,
+      )).toEqual(["Hus 2/3", "Li-Erikes Gård"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("respects an explicit homestead name for grouped provider homes", async () => {
+    const groupedProvider: EnergyProvider = {
+      ...provider,
+      homes: async () => [
+        { id: "house-2", name: "Hus 2/3" },
+        { id: "farm", name: "Li-Erikes Gård" },
+      ],
+    };
+    vi.stubEnv("HOME_ENERGY_PROPERTY_NAME", "Li-Erikes Gård");
+    try {
+      const response = await buildApp({
+        provider: groupedProvider,
+        apiKey: "secret",
+      }).inject({
+        headers: { "x-home-energy-key": "secret" },
+        method: "GET",
+        url: "/api/energy/property",
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().name).toBe("Li-Erikes Gård");
+      expect(response.json().gridConnections).toHaveLength(2);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("retains the provider-home name for a single-home installation", async () => {
+    const singleProvider: EnergyProvider = {
+      ...provider,
+      homes: async () => [{ id: "home-1", name: "My Cottage" }],
+    };
+    vi.stubEnv("HOME_ENERGY_PROPERTY_NAME", "");
+    try {
+      const response = await buildApp({
+        provider: singleProvider,
+        apiKey: "secret",
+      }).inject({
+        headers: { "x-home-energy-key": "secret" },
+        method: "GET",
+        url: "/api/energy/property",
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().name).toBe("My Cottage");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("groups two provider homes into one property with separate grid billing scopes", async () => {
     const multiHomeProvider: EnergyProvider = {
       ...provider,
@@ -592,6 +670,46 @@ describe("Home-Energy API", () => {
           totalConsumption: 18,
           totalCost: 36,
         },
+      ],
+    });
+  });
+
+  it("aggregates a 30-day request without losing independent meter scopes", async () => {
+    const groupedProvider: EnergyProvider = {
+      ...provider,
+      homes: async () => [
+        { id: "home-1", name: "Hus 2/3" },
+        { id: "home-2", name: "Li-Erikes Gård" },
+      ],
+      consumption: async (homeId, days) => ({
+        provider: "fake",
+        homeId,
+        samples: [],
+        count: days,
+        totalConsumption: (homeId === "home-1" ? 1 : 2) * days,
+        totalCost: (homeId === "home-1" ? 2 : 4) * days,
+        currency: "SEK",
+      }),
+    };
+    const response = await buildApp({
+      provider: groupedProvider,
+      apiKey: "secret",
+    }).inject({
+      headers: { "x-home-energy-key": "secret" },
+      method: "GET",
+      url: "/api/energy/property/consumption?days=30",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      days: 30,
+      gridConnectionCount: 2,
+      totalConsumption: 90,
+      totalCost: 180,
+      currency: "SEK",
+      connections: [
+        { providerHomeId: "home-1", totalConsumption: 30, totalCost: 60 },
+        { providerHomeId: "home-2", totalConsumption: 60, totalCost: 120 },
       ],
     });
   });
