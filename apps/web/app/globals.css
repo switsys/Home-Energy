@@ -382,7 +382,8 @@ footer {
   text-transform: uppercase;
 }
 
-.planner-form input {
+.planner-form input,
+.planner-form select {
   width: 96px;
   min-height: 36px;
   padding: 0 10px;
@@ -395,7 +396,12 @@ footer {
   font-size: 12px;
 }
 
-.planner-form input:focus {
+.planner-form select {
+  width: 112px;
+}
+
+.planner-form input:focus,
+.planner-form select:focus {
   border-color: #3f7956;
 }
 
