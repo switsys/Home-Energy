@@ -236,6 +236,41 @@ a { color: inherit; }
   letter-spacing: -1px;
 }
 
+.consumption-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.consumption-periods {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.consumption-periods a {
+  padding: 5px 8px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.consumption-periods a:hover,
+.consumption-periods a:focus-visible {
+  color: var(--text);
+}
+
+.consumption-periods a[aria-current="page"] {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
 .section {
   margin-top: 34px;
 }
