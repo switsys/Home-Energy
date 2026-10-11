@@ -299,6 +299,25 @@ function queryNumber(
     : fallback;
 }
 
+function queryString(
+  value: string | string[] | undefined,
+): string | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw?.trim() || null;
+}
+
+function stableGridFeeConnections(
+  property: EnergyProperty,
+): readonly GridConnection[] {
+  return [...property.gridConnections].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+}
+
+function gridFeeInletLabel(index: number): string {
+  return `Grid fee inlet ${String.fromCharCode(65 + index)}`;
+}
+
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage({
@@ -333,6 +352,34 @@ export default async function DashboardPage({
     );
   }
 
+  const gridFeeConnections = stableGridFeeConnections(property);
+  const requestedPlannerHomeId = queryString(query.homeId);
+  const plannerConnection =
+    gridFeeConnections.find(
+      (connection) => connection.providerHomeId === requestedPlannerHomeId,
+    ) ??
+    gridFeeConnections.find(
+      (connection) => connection.providerHomeId === advice.homeId,
+    ) ??
+    gridFeeConnections[0] ??
+    null;
+  const plannerConnectionIndex =
+    plannerConnection === null
+      ? -1
+      : gridFeeConnections.findIndex(
+          (connection) => connection.id === plannerConnection.id,
+        );
+  const plannerInletLabel =
+    plannerConnectionIndex < 0
+      ? null
+      : gridFeeInletLabel(plannerConnectionIndex);
+  const gridFeeLabels = new Map(
+    gridFeeConnections.map((connection, index) => [
+      connection.id,
+      gridFeeInletLabel(index),
+    ]),
+  );
+
   let loadPlan: LoadPlan | null = null;
   let loadPlanError: string | null = null;
   let propertyPeaks: PropertyGridPeaks | null = null;
@@ -343,6 +390,9 @@ export default async function DashboardPage({
       minutes: String(plannerMinutes),
       powerKw: String(plannerPowerKw),
     });
+    if (plannerConnection !== null) {
+      params.set("homeId", plannerConnection.providerHomeId);
+    }
     loadPlan = await api<LoadPlan>(`/api/energy/load-plan?${params.toString()}`);
   } catch (error) {
     loadPlanError =
@@ -512,6 +562,30 @@ export default async function DashboardPage({
                   type="number"
                 />
               </label>
+              {gridFeeConnections.length > 1 ? (
+                <label>
+                  <span>Grid fee inlet</span>
+                  <select
+                    defaultValue={plannerConnection?.providerHomeId ?? ""}
+                    name="homeId"
+                  >
+                    {gridFeeConnections.map((connection, index) => (
+                      <option
+                        key={connection.id}
+                        value={connection.providerHomeId}
+                      >
+                        {gridFeeInletLabel(index).replace("Grid fee ", "")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : plannerConnection ? (
+                <input
+                  name="homeId"
+                  type="hidden"
+                  value={plannerConnection.providerHomeId}
+                />
+              ) : null}
               <button type="submit">Plan load</button>
             </form>
           </div>
@@ -537,6 +611,7 @@ export default async function DashboardPage({
                 </small>
                 {loadPlan.best.grid ? (
                   <small>
+                    {plannerInletLabel ? `${plannerInletLabel} · ` : ""}
                     {loadPlan.best.grid.label}:{" "}
                     {money(
                       loadPlan.best.grid.transferCost,
@@ -580,6 +655,7 @@ export default async function DashboardPage({
                 </small>
                 {loadPlan.immediate?.grid ? (
                   <small>
+                    {plannerInletLabel ? `${plannerInletLabel} · ` : ""}
                     Current peak-tariff band: up to{" "}
                     {number(
                       loadPlan.immediate.grid.highestDemandRatePerKwMonth,
@@ -639,13 +715,18 @@ export default async function DashboardPage({
                 </article>
 
                 <div className="peak-grid connection-peak-grid">
-                  {propertyPeaks.connections.map((connection, index) => (
+                  {[...propertyPeaks.connections]
+                    .sort((left, right) =>
+                      left.gridConnectionId.localeCompare(right.gridConnectionId),
+                    )
+                    .map((connection) => (
                     <article
                       className="peak-card"
                       key={connection.gridConnectionId}
                     >
                       <span className="label">
-                        GRID FEE INLET {String.fromCharCode(65 + index)}
+                        {(gridFeeLabels.get(connection.gridConnectionId) ??
+                          "Grid fee inlet").toUpperCase()}
                       </span>
                       <strong>
                         {connection.estimatedDemandCharge === null
