@@ -180,7 +180,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     return buildEnergyProperty({
       id: propertyId,
       name:
-        propertyName === "Home"
+        propertyName === "Home" && providerHomes.length === 1
           ? providerHomes[0]?.name?.trim() || propertyName
           : propertyName,
       providerId: provider.id,
