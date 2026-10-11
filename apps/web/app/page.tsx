@@ -463,7 +463,7 @@ export default async function DashboardPage({
                   )}
             </p>
             <small>
-              Across {consumption.gridConnectionCount} separate grid connections
+              {property.name} total · both parts combined
             </small>
           </article>
         </section>
@@ -473,7 +473,7 @@ export default async function DashboardPage({
           currentStartsAt={
             advice.current?.startsAt ?? prices.current?.startsAt ?? null
           }
-          gridConnectionName={activeConnection?.name ?? null}
+          propertyName={property.name}
           gridScheduleAvailable={gridSchedule !== null}
           loadMinutes={plannerMinutes}
           loadPowerKw={plannerPowerKw}
@@ -481,53 +481,6 @@ export default async function DashboardPage({
           priceAreaCode={activeConnection?.priceAreaCode ?? null}
           slots={prices.today}
         />
-
-        <section className="section">
-          <div className="section-heading">
-            <div>
-              <span className="kicker">GRID CONNECTIONS</span>
-              <h2>{property.name} as one property</h2>
-            </div>
-          </div>
-
-          <div className="connection-grid">
-            {property.gridConnections.map((connection) => {
-              const usage = consumption.connections.find(
-                (item) => item.gridConnectionId === connection.id,
-              );
-              const active = connection.id === activeConnection?.id;
-
-              return (
-                <article
-                  className={`connection-card${active ? " connection-active" : ""}`}
-                  key={connection.id}
-                >
-                  <span className="label">
-                    {active ? "PRIMARY PRICE CONNECTION" : "GRID CONNECTION"}
-                  </span>
-                  <strong>{connection.name}</strong>
-                  <p>
-                    {usage?.totalConsumption === null ||
-                    usage?.totalConsumption === undefined
-                      ? "Consumption unavailable"
-                      : `${number(usage.totalConsumption, 1)} kWh · last 7 days`}
-                  </p>
-                  <small>
-                    {usage?.totalCost === null ||
-                    usage?.totalCost === undefined
-                      ? "Cost unavailable"
-                      : money(usage.totalCost, usage.currency ?? "SEK")}
-                    {" · "}
-                    {connection.gridCompany ?? "Grid company unavailable"}
-                    {connection.priceAreaCode
-                      ? ` · ${connection.priceAreaCode}`
-                      : ""}
-                  </small>
-                </article>
-              );
-            })}
-          </div>
-        </section>
 
         <section className="section planner-section">
           <div className="section-heading planner-heading">
@@ -649,7 +602,7 @@ export default async function DashboardPage({
           <section className="section">
             <div className="section-heading">
               <div>
-                <span className="kicker">PEAK DEMAND</span>
+                <span className="kicker">GRID FEE EXCEPTION</span>
                 <h2>Falu Elnät effect charge · separate per inlet</h2>
               </div>
             </div>
@@ -661,7 +614,7 @@ export default async function DashboardPage({
                 <p>No effect charge applies this month.</p>
                 <small>
                   Next active period: 1 November ·{" "}
-                  {propertyPeaks.connections.length} separate billing scopes
+                  {propertyPeaks.connections.length} separate grid-fee billing scopes
                 </small>
               </article>
             ) : (
@@ -681,17 +634,19 @@ export default async function DashboardPage({
                     is never merged across the two meters.
                   </p>
                   <small>
-                    {propertyPeaks.connections.length} independent billing scopes
+                    {propertyPeaks.connections.length} independent grid-fee billing scopes
                   </small>
                 </article>
 
                 <div className="peak-grid connection-peak-grid">
-                  {propertyPeaks.connections.map((connection) => (
+                  {propertyPeaks.connections.map((connection, index) => (
                     <article
                       className="peak-card"
                       key={connection.gridConnectionId}
                     >
-                      <span className="label">{connection.name}</span>
+                      <span className="label">
+                        GRID FEE INLET {String.fromCharCode(65 + index)}
+                      </span>
                       <strong>
                         {connection.estimatedDemandCharge === null
                           ? connection.status === "no_data"

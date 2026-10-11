@@ -68,6 +68,23 @@ The first Google Home companion should:
 
 Home-Energy should keep its own automation registry and treat Google Home as one execution target.
 
+## Visual property grouping
+
+Google Home structure boundaries are provider details, not Home-Energy property
+boundaries. Multiple Google Home structures may be presented as one homestead
+when they represent parts of the same physical property.
+
+For Li-Erikes Gård, both Google Home structures should therefore appear under
+one visual property, `Li-Erikes Gård`. The original Google structure/room
+metadata and provider scope IDs remain intact underneath for discovery,
+permissions, commands, and diagnostics.
+
+The same visual rule applies to energy data: shared supplier, price area, price
+signal, automation, and property totals are presented once for the homestead.
+The exception is grid-fee accounting. Separate physical grid inlets remain
+separate billing scopes for Falu Elnät effect-charge and other inlet-specific
+grid-fee calculations.
+
 ## Energy-aware use cases
 
 Useful first targets:

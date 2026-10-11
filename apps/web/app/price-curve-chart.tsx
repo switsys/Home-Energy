@@ -21,7 +21,7 @@ type InteractivePriceCurveProps = Readonly<{
   priceAreaCode: string | null;
   peakRiskSlots: readonly PeakRiskSlot[];
   gridScheduleAvailable: boolean;
-  gridConnectionName: string | null;
+  propertyName: string;
   loadMinutes: number;
   loadPowerKw: number;
 }>;
@@ -257,7 +257,7 @@ export function InteractivePriceCurve({
   priceAreaCode,
   peakRiskSlots,
   gridScheduleAvailable,
-  gridConnectionName,
+  propertyName,
   loadMinutes,
   loadPowerKw,
 }: InteractivePriceCurveProps) {
@@ -804,7 +804,7 @@ export function InteractivePriceCurve({
                 </strong>
               </div>
               <small>
-                {gridConnectionName ?? "Primary price connection"}
+                {propertyName}
               </small>
             </div>
 
