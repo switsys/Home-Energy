@@ -49,5 +49,8 @@ jobs:
       - name: Test API
         run: pnpm --filter @home-energy/api test
 
+      - name: Test web
+        run: pnpm --filter @home-energy/web test
+
       - name: Build workspace
         run: pnpm -r build
