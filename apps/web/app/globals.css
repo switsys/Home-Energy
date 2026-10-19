@@ -1269,3 +1269,12 @@ footer {
     grid-column: auto;
   }
 }
+
+
+.price-breakdown {
+  display: block;
+  margin-top: 9px;
+  color: #718078;
+  font-size: 8px;
+  line-height: 1.45;
+}
