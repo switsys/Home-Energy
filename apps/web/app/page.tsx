@@ -430,9 +430,15 @@ export default async function DashboardPage({
   const activeConnection = property.gridConnections.find(
     (connection) => connection.providerHomeId === advice.homeId,
   );
+  const currentPriceStartsAt =
+    advice.current?.startsAt ?? prices.current?.startsAt ?? null;
+  const currentPriceStartsAtMs =
+    currentPriceStartsAt === null ? Number.NaN : Date.parse(currentPriceStartsAt);
   const currentGridQuote =
     gridSchedule?.today.find(
-      (slot) => slot.startsAt === (advice.current?.startsAt ?? prices.current?.startsAt),
+      (slot) =>
+        Number.isFinite(currentPriceStartsAtMs) &&
+        Date.parse(slot.startsAt) === currentPriceStartsAtMs,
     ) ??
     gridSchedule?.today[0] ??
     null;
