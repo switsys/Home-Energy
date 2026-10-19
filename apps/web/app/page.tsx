@@ -20,6 +20,9 @@ type GridScheduleSlot = Readonly<{
   startsAt: string;
   loadPeriod: "low" | "high";
   season: "summer" | "winter";
+  transferPerKwh: number;
+  energyTaxPerKwh: number;
+  variableGridPerKwh: number;
   demandRatePerKwMonth: number;
 }>;
 
@@ -114,6 +117,7 @@ type LoadPlanGridSummary = Readonly<{
   tariffId: string;
   label: string;
   transferCost: number;
+  energyTaxCost: number;
   highestDemandRatePerKwMonth: number;
   peakWindowMinutes: number;
   peakAveragingCount: number;
@@ -130,6 +134,7 @@ type LoadPlanWindow = Readonly<{
   averagePrice: number;
   energyPriceCost: number;
   gridTransferCost: number;
+  gridEnergyTaxCost: number;
   estimatedCost: number;
   comparisonCost: number;
   currency: string;
@@ -319,6 +324,44 @@ function gridFeeInletLabel(index: number): string {
   return `Grid fee inlet ${String.fromCharCode(65 + index)}`;
 }
 
+function gridVariablePerKwh(
+  schedule: GridSchedule | null,
+  startsAt: string,
+): number {
+  if (schedule === null) return 0;
+  const startsAtMs = Date.parse(startsAt);
+  if (!Number.isFinite(startsAtMs)) return 0;
+
+  const slot = [...schedule.today, ...schedule.tomorrow].find(
+    (candidate) => Date.parse(candidate.startsAt) === startsAtMs,
+  );
+  return slot?.variableGridPerKwh ?? 0;
+}
+
+function deliveredPriceSlot(
+  slot: PriceSlot | null,
+  schedule: GridSchedule | null,
+): PriceSlot | null {
+  if (slot === null) return null;
+  return {
+    ...slot,
+    total: slot.total + gridVariablePerKwh(schedule, slot.startsAt),
+  };
+}
+
+function deliveredPriceWindow(
+  window: PriceWindow,
+  schedule: GridSchedule | null,
+): PriceWindow {
+  const surcharge = gridVariablePerKwh(schedule, window.startsAt);
+  return {
+    ...window,
+    average: window.average + surcharge,
+    minimum: window.minimum + surcharge,
+    maximum: window.maximum + surcharge,
+  };
+}
+
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage({
@@ -425,6 +468,19 @@ export default async function DashboardPage({
   const activeConnection = property.gridConnections.find(
     (connection) => connection.providerHomeId === advice.homeId,
   );
+  const displayCurrent = deliveredPriceSlot(
+    advice.current ?? prices.current,
+    gridSchedule,
+  );
+  const displayToday = prices.today.map(
+    (slot) => deliveredPriceSlot(slot, gridSchedule) ?? slot,
+  );
+  const displayCheapestSlots = advice.cheapestSlots.map(
+    (slot) => deliveredPriceSlot(slot, gridSchedule) ?? slot,
+  );
+  const displayExpensiveSlots = advice.expensiveSlots.map(
+    (slot) => deliveredPriceSlot(slot, gridSchedule) ?? slot,
+  );
   const peakRiskSlots =
     gridSchedule?.today.filter(
       (slot) => slot.loadPeriod === "high" && slot.demandRatePerKwMonth > 0,
@@ -438,7 +494,9 @@ export default async function DashboardPage({
     advice.cheapestWindows.minutes30,
     advice.cheapestWindows.minutes60,
     advice.cheapestWindows.minutes120,
-  ].filter((window): window is PriceWindow => window !== null);
+  ]
+    .filter((window): window is PriceWindow => window !== null)
+    .map((window) => deliveredPriceWindow(window, gridSchedule));
 
   return (
     <div className="shell">
@@ -476,16 +534,20 @@ export default async function DashboardPage({
 
         <section className="hero-grid">
           <article className="card current-card">
-            <span className="label">CURRENT ENERGY PRICE</span>
+            <span className="label">
+              {gridSchedule ? "CURRENT VARIABLE PRICE" : "CURRENT SUPPLIER PRICE"}
+            </span>
             <div className="price">
-              {advice.current
-                ? money(advice.current.total, advice.current.currency)
+              {displayCurrent
+                ? money(displayCurrent.total, displayCurrent.currency)
                 : "—"}
             </div>
-            <span className="unit">per kWh</span>
-            {advice.current?.level ? (
+            <span className="unit">
+              per kWh{gridSchedule ? " · incl. grid transfer + energy tax" : ""}
+            </span>
+            {displayCurrent?.level ? (
               <span className="pill">
-                {advice.current.level.replaceAll("_", " ")}
+                {displayCurrent.level.replaceAll("_", " ")}
               </span>
             ) : null}
           </article>
@@ -552,7 +614,7 @@ export default async function DashboardPage({
         </section>
 
         <InteractivePriceCurve
-          currentPrice={advice.current ?? prices.current}
+          currentPrice={displayCurrent}
           currentStartsAt={
             advice.current?.startsAt ?? prices.current?.startsAt ?? null
           }
@@ -562,7 +624,7 @@ export default async function DashboardPage({
           loadPowerKw={plannerPowerKw}
           peakRiskSlots={peakRiskSlots}
           priceAreaCode={activeConnection?.priceAreaCode ?? null}
-          slots={prices.today}
+          slots={displayToday}
         />
 
         <section className="section planner-section">
@@ -651,7 +713,7 @@ export default async function DashboardPage({
                       loadPlan.best.grid.transferCost,
                       loadPlan.best.currency,
                     )}{" "}
-                    grid transfer included · peak tariff up to{" "}
+                    grid transfer + energy tax included · peak tariff up to{" "}
                     {number(
                       loadPlan.best.grid.highestDemandRatePerKwMonth,
                       0,
@@ -832,7 +894,7 @@ export default async function DashboardPage({
             </div>
 
             <div className="slot-list">
-              {advice.cheapestSlots.map((slot) => (
+              {displayCheapestSlots.map((slot) => (
                 <div className="slot-row cheap" key={slot.startsAt}>
                   <span>{formatDateTime(slot.startsAt)}</span>
                   <strong>{money(slot.total, slot.currency)}</strong>
@@ -850,7 +912,7 @@ export default async function DashboardPage({
             </div>
 
             <div className="slot-list">
-              {advice.expensiveSlots.map((slot) => (
+              {displayExpensiveSlots.map((slot) => (
                 <div className="slot-row expensive" key={slot.startsAt}>
                   <span>{formatDateTime(slot.startsAt)}</span>
                   <strong>{money(slot.total, slot.currency)}</strong>
