@@ -255,9 +255,11 @@ describe("Home-Energy API", () => {
       best: {
         energyPriceCost: 2,
         gridTransferCost: 0.225,
-        estimatedCost: 2.225,
+        gridEnergyTaxCost: 0.9,
+        estimatedCost: 3.125,
         grid: {
           tariffId: "falu-elnat-2026",
+          energyTaxCost: 0.9,
           highestDemandRatePerKwMonth: 0,
           demandChargeIncludedInEstimatedCost: false,
         },
@@ -332,11 +334,17 @@ describe("Home-Energy API", () => {
       today: [
         {
           startsAt: "2026-11-10T06:45:00+01:00",
+          currency: "SEK",
+          transferPerKwh: 0.1125,
+          energyTaxPerKwh: 0.45,
           loadPeriod: "low",
           demandRatePerKwMonth: 0,
         },
         {
           startsAt: "2026-11-10T07:00:00+01:00",
+          currency: "SEK",
+          transferPerKwh: 0.1125,
+          energyTaxPerKwh: 0.45,
           loadPeriod: "high",
           demandRatePerKwMonth: 75,
         },
@@ -511,7 +519,7 @@ describe("Home-Energy API", () => {
     expect(response.json()).toMatchObject({
       action: "wait",
       immediate: {
-        comparisonCost: 76.7,
+        comparisonCost: 80.3,
         grid: {
           demandImpact: {
             status: "definite",
@@ -522,7 +530,7 @@ describe("Home-Energy API", () => {
       },
       best: {
         startsAt: "2026-11-10T18:00:00.000Z",
-        comparisonCost: 8.9,
+        comparisonCost: 12.5,
         grid: {
           demandImpact: {
             status: "none",
