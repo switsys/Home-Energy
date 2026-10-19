@@ -97,11 +97,13 @@ describe("buildLoadPlan", () => {
       energyKwh: 2,
       energyPriceCost: 2,
       gridTransferCost: 0.225,
-      estimatedCost: 2.225,
-      averagePrice: 1.1125,
+      gridEnergyTaxCost: 0.9,
+      estimatedCost: 3.125,
+      averagePrice: 1.5625,
     });
     expect(plan.best.grid).toMatchObject({
       tariffId: "falu-elnat-2026",
+      energyTaxCost: 0.9,
       highestDemandRatePerKwMonth: 0,
       peakWindowMinutes: 60,
       peakAveragingCount: 3,
@@ -155,10 +157,10 @@ describe("buildLoadPlan", () => {
       plannedPeakContributionKw: 8,
       minimumIncrementalDemandCharge: 75,
     });
-    expect(plan.immediate?.comparisonCost).toBe(76.7);
+    expect(plan.immediate?.comparisonCost).toBe(80.3);
     expect(plan.best.startsAt).toBe("2026-11-10T18:00:00.000Z");
     expect(plan.best.grid?.demandImpact.status).toBe("none");
-    expect(plan.best.comparisonCost).toBe(8.9);
+    expect(plan.best.comparisonCost).toBe(12.5);
   });
 
   it("rejects invalid load inputs", () => {
