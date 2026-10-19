@@ -889,7 +889,11 @@ export function InteractivePriceCurve({
                   {selectedIsElapsed
                     ? "Select a future slot for a complete load estimate"
                     : selectedEstimate
-                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · variable delivered price`
+                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · ${
+                          gridScheduleAvailable
+                            ? "variable delivered price"
+                            : "electricity price only"
+                        }`
                       : `Not enough remaining slots for ${windowMinutes} min`}
                 </small>
               </div>
@@ -927,9 +931,11 @@ export function InteractivePriceCurve({
                       {" · "}save {money(selectedSavings, selectedEstimate.currency)}
                     </strong>
                     <small>
-                      Same {loadPowerKw.toFixed(1)} kW × {windowMinutes} min load,
-                      including grid transfer and energy tax; monthly effect
-                      charge remains separate. Drag the block to compare.
+                      Same {loadPowerKw.toFixed(1)} kW × {windowMinutes} min load,{" "}
+                      {gridScheduleAvailable
+                        ? "including grid transfer and energy tax; monthly effect charge remains separate."
+                        : "electricity price only; grid tariff data is unavailable."}{" "}
+                      Drag the block to compare.
                     </small>
                   </>
                 ) : (
