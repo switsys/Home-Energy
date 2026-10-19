@@ -41,7 +41,6 @@ Copy `.env.example` to `.env` and set:
 - `HOME_ENERGY_API_URL` for the dashboard (defaults to `http://127.0.0.1:3002`)
 - `HOME_ENERGY_GRID_TARIFF=falu-elnat-2026` to enable the current Falu Elnät grid model
 - `HOME_ENERGY_PROPERTY_ID` and `HOME_ENERGY_PROPERTY_NAME` to give multiple provider homes one property identity
-- `TIBBER_PRICE_ADJUSTMENT_PER_KWH` to add contract-specific per-kWh costs that Tibber's GraphQL `priceInfo.total` does not expose (for example a supplier markup)
 
 The dashboard reads the API key server-side and does not expose it to the browser.
 
