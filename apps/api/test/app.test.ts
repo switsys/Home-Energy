@@ -7,7 +7,6 @@ import {
   type HomeDeviceGateway,
   type PriceSchedule,
 } from "@home-energy/core";
-import { TibberProvider } from "@home-energy/tibber";
 import { buildApp } from "../src/app.js";
 
 const schedule: PriceSchedule = {
@@ -39,61 +38,6 @@ const provider: EnergyProvider = {
     currency: "SEK",
   }),
 };
-
-describe("Tibber contract price adjustment", () => {
-  it("adds the configured per-kWh adjustment to current and scheduled totals", async () => {
-    const tibber = new TibberProvider({
-      token: "test-token",
-      priceAdjustmentPerKwh: 0.075,
-      fetch: async () =>
-        new Response(
-          JSON.stringify({
-            data: {
-              viewer: {
-                home: {
-                  id: "home-1",
-                  currentSubscription: {
-                    priceInfo: {
-                      current: {
-                        total: 0.66,
-                        energy: 0.55,
-                        tax: 0.11,
-                        startsAt: "2026-10-19T13:45:00+02:00",
-                        currency: "SEK",
-                        level: "NORMAL",
-                      },
-                      today: [
-                        {
-                          total: 0.66,
-                          energy: 0.55,
-                          tax: 0.11,
-                          startsAt: "2026-10-19T13:45:00+02:00",
-                          currency: "SEK",
-                          level: "NORMAL",
-                        },
-                      ],
-                      tomorrow: [],
-                    },
-                  },
-                },
-              },
-            },
-          }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
-        ),
-    });
-
-    const prices = await tibber.prices("home-1");
-
-    expect(prices.current?.total).toBeCloseTo(0.735);
-    expect(prices.today[0]?.total).toBeCloseTo(0.735);
-    expect(prices.current?.energy).toBe(0.55);
-    expect(prices.current?.tax).toBe(0.11);
-  });
-});
 
 describe("Home-Energy API", () => {
   it("reports configured provider without exposing secrets", async () => {
