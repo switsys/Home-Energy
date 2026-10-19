@@ -18,6 +18,9 @@ type PriceSchedule = Readonly<{
 
 type GridScheduleSlot = Readonly<{
   startsAt: string;
+  currency: string;
+  transferPerKwh: number;
+  energyTaxPerKwh: number;
   loadPeriod: "low" | "high";
   season: "summer" | "winter";
   demandRatePerKwMonth: number;
@@ -114,6 +117,7 @@ type LoadPlanGridSummary = Readonly<{
   tariffId: string;
   label: string;
   transferCost: number;
+  energyTaxCost: number;
   highestDemandRatePerKwMonth: number;
   peakWindowMinutes: number;
   peakAveragingCount: number;
@@ -130,6 +134,7 @@ type LoadPlanWindow = Readonly<{
   averagePrice: number;
   energyPriceCost: number;
   gridTransferCost: number;
+  gridEnergyTaxCost: number;
   estimatedCost: number;
   comparisonCost: number;
   currency: string;
@@ -425,6 +430,20 @@ export default async function DashboardPage({
   const activeConnection = property.gridConnections.find(
     (connection) => connection.providerHomeId === advice.homeId,
   );
+  const currentGridQuote =
+    gridSchedule?.today.find(
+      (slot) => slot.startsAt === (advice.current?.startsAt ?? prices.current?.startsAt),
+    ) ??
+    gridSchedule?.today[0] ??
+    null;
+  const gridVariablePerKwh =
+    currentGridQuote === null
+      ? 0
+      : currentGridQuote.transferPerKwh + currentGridQuote.energyTaxPerKwh;
+  const deliveredPrice = (value: number, currency: string) =>
+    currentGridQuote !== null && currentGridQuote.currency === currency
+      ? value + gridVariablePerKwh
+      : value;
   const peakRiskSlots =
     gridSchedule?.today.filter(
       (slot) => slot.loadPeriod === "high" && slot.demandRatePerKwMonth > 0,
@@ -476,13 +495,24 @@ export default async function DashboardPage({
 
         <section className="hero-grid">
           <article className="card current-card">
-            <span className="label">CURRENT ENERGY PRICE</span>
+            <span className="label">CURRENT VARIABLE PRICE</span>
             <div className="price">
               {advice.current
-                ? money(advice.current.total, advice.current.currency)
+                ? money(
+                    deliveredPrice(advice.current.total, advice.current.currency),
+                    advice.current.currency,
+                  )
                 : "—"}
             </div>
-            <span className="unit">per kWh</span>
+            <span className="unit">per kWh delivered</span>
+            {currentGridQuote ? (
+              <small className="price-breakdown">
+                Tibber + {money(currentGridQuote.energyTaxPerKwh, currentGridQuote.currency)}
+                /kWh energy tax +{" "}
+                {money(currentGridQuote.transferPerKwh, currentGridQuote.currency)}
+                /kWh grid transfer
+              </small>
+            ) : null}
             {advice.current?.level ? (
               <span className="pill">
                 {advice.current.level.replaceAll("_", " ")}
@@ -557,6 +587,7 @@ export default async function DashboardPage({
             advice.current?.startsAt ?? prices.current?.startsAt ?? null
           }
           propertyName={property.name}
+          gridVariablePerKwh={gridVariablePerKwh}
           gridScheduleAvailable={gridSchedule !== null}
           loadMinutes={plannerMinutes}
           loadPowerKw={plannerPowerKw}
@@ -651,7 +682,12 @@ export default async function DashboardPage({
                       loadPlan.best.grid.transferCost,
                       loadPlan.best.currency,
                     )}{" "}
-                    grid transfer included · peak tariff up to{" "}
+                    grid transfer +{" "}
+                    {money(
+                      loadPlan.best.grid.energyTaxCost,
+                      loadPlan.best.currency,
+                    )}{" "}
+                    energy tax included · peak tariff up to{" "}
                     {number(
                       loadPlan.best.grid.highestDemandRatePerKwMonth,
                       0,
@@ -813,9 +849,12 @@ export default async function DashboardPage({
                 <strong>
                   {formatTime(window.startsAt)}–{formatTime(window.endsAt)}
                 </strong>
-                <p>{money(window.average, window.currency)} avg/kWh</p>
+                <p>
+                  {money(deliveredPrice(window.average, window.currency), window.currency)} avg/kWh
+                </p>
                 <small>
-                  {money(window.minimum, window.currency)}–{money(window.maximum, window.currency)}
+                  {money(deliveredPrice(window.minimum, window.currency), window.currency)}–
+                  {money(deliveredPrice(window.maximum, window.currency), window.currency)}
                 </small>
               </article>
             ))}
@@ -835,7 +874,9 @@ export default async function DashboardPage({
               {advice.cheapestSlots.map((slot) => (
                 <div className="slot-row cheap" key={slot.startsAt}>
                   <span>{formatDateTime(slot.startsAt)}</span>
-                  <strong>{money(slot.total, slot.currency)}</strong>
+                  <strong>
+                    {money(deliveredPrice(slot.total, slot.currency), slot.currency)}
+                  </strong>
                 </div>
               ))}
             </div>
@@ -853,7 +894,9 @@ export default async function DashboardPage({
               {advice.expensiveSlots.map((slot) => (
                 <div className="slot-row expensive" key={slot.startsAt}>
                   <span>{formatDateTime(slot.startsAt)}</span>
-                  <strong>{money(slot.total, slot.currency)}</strong>
+                  <strong>
+                    {money(deliveredPrice(slot.total, slot.currency), slot.currency)}
+                  </strong>
                 </div>
               ))}
             </div>
