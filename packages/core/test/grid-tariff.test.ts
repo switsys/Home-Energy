@@ -9,6 +9,7 @@ describe("Falu Elnät 2026 tariff", () => {
 
     expect(quote).toMatchObject({
       transferPerKwh: 0.1125,
+      energyTaxPerKwh: 0.45,
       loadPeriod: "high",
       season: "winter",
       demandRatePerKwMonth: 75,
@@ -47,6 +48,7 @@ describe("Falu Elnät 2026 tariff", () => {
 
     expect(quote).toMatchObject({
       transferPerKwh: 0.1125,
+      energyTaxPerKwh: 0.45,
       loadPeriod: "low",
       season: "summer",
       demandRatePerKwMonth: 0,
