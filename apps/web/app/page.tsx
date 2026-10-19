@@ -221,57 +221,6 @@ function money(value: number, currency = "SEK"): string {
   }).format(value);
 }
 
-function gridVariablePerKwh(
-  startsAt: string,
-  schedule: GridSchedule | null,
-): number {
-  if (schedule === null) return 0;
-  const startsAtMs = Date.parse(startsAt);
-  if (!Number.isFinite(startsAtMs)) return 0;
-
-  const slot = [...schedule.today, ...schedule.tomorrow].find(
-    (candidate) => Date.parse(candidate.startsAt) === startsAtMs,
-  );
-  return slot === undefined
-    ? 0
-    : slot.transferPerKwh + slot.energyTaxPerKwh;
-}
-
-function deliveredPrice(
-  slot: PriceSlot,
-  schedule: GridSchedule | null,
-): PriceSlot {
-  return {
-    ...slot,
-    total: slot.total + gridVariablePerKwh(slot.startsAt, schedule),
-  };
-}
-
-function averageGridVariableForWindow(
-  window: PriceWindow,
-  schedule: GridSchedule | null,
-): number {
-  if (schedule === null) return 0;
-  const startMs = Date.parse(window.startsAt);
-  const endMs = Date.parse(window.endsAt);
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
-    return 0;
-  }
-
-  const slots = [...schedule.today, ...schedule.tomorrow].filter((slot) => {
-    const startsAtMs = Date.parse(slot.startsAt);
-    return startsAtMs >= startMs && startsAtMs < endMs;
-  });
-  if (slots.length === 0) return 0;
-
-  return (
-    slots.reduce(
-      (sum, slot) => sum + slot.transferPerKwh + slot.energyTaxPerKwh,
-      0,
-    ) / slots.length
-  );
-}
-
 function number(value: number, digits = 1): string {
   return new Intl.NumberFormat("sv-SE", {
     maximumFractionDigits: digits,
@@ -499,18 +448,6 @@ export default async function DashboardPage({
     gridSchedule?.today.filter(
       (slot) => slot.loadPeriod === "high" && slot.demandRatePerKwMonth > 0,
     ) ?? [];
-  const displayedCurrent = advice.current
-    ? deliveredPrice(advice.current, gridSchedule)
-    : prices.current
-      ? deliveredPrice(prices.current, gridSchedule)
-      : null;
-  const displayedToday = prices.today.map((slot) =>
-    deliveredPrice(slot, gridSchedule),
-  );
-  const gridVariableNow =
-    displayedCurrent === null
-      ? 0
-      : gridVariablePerKwh(displayedCurrent.startsAt, gridSchedule);
   const signal = signalText(advice.recommendation.action);
   const allPeaksInactive =
     propertyPeaks?.connections.every(
@@ -581,12 +518,6 @@ export default async function DashboardPage({
                 {advice.current.level.replaceAll("_", " ")}
               </span>
             ) : null}
-            {gridSchedule !== null && gridVariableNow > 0 ? (
-              <small>
-                Includes {number(gridVariableNow * 100, 2)} öre/kWh energy tax +
-                grid transfer. Fixed and effect charges excluded.
-              </small>
-            ) : null}
           </article>
 
           <article
@@ -651,8 +582,10 @@ export default async function DashboardPage({
         </section>
 
         <InteractivePriceCurve
-          currentPrice={displayedCurrent}
-          currentStartsAt={displayedCurrent?.startsAt ?? null}
+          currentPrice={advice.current ?? prices.current}
+          currentStartsAt={
+            advice.current?.startsAt ?? prices.current?.startsAt ?? null
+          }
           propertyName={property.name}
           gridVariablePerKwh={gridVariablePerKwh}
           gridScheduleAvailable={gridSchedule !== null}
@@ -660,8 +593,7 @@ export default async function DashboardPage({
           loadPowerKw={plannerPowerKw}
           peakRiskSlots={peakRiskSlots}
           priceAreaCode={activeConnection?.priceAreaCode ?? null}
-          slots={displayedToday}
-          variableGridIncluded={gridSchedule !== null}
+          slots={prices.today}
         />
 
         <section className="section planner-section">
