@@ -45,6 +45,20 @@ function configured(value: string | null | undefined): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function configuredNumber(
+  value: string | null | undefined,
+  fallback = 0,
+): number {
+  const normalized = configured(value);
+  if (normalized === null) return fallback;
+
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid numeric configuration value: ${normalized}`);
+  }
+  return parsed;
+}
+
 function providerFromEnvironment(): EnergyProvider | null {
   const token = configured(process.env.TIBBER_TOKEN);
   if (token === null) return null;
@@ -52,6 +66,10 @@ function providerFromEnvironment(): EnergyProvider | null {
   return new TibberProvider({
     token,
     endpoint: configured(process.env.TIBBER_API_URL) ?? undefined,
+    priceAdjustmentPerKwh: configuredNumber(
+      process.env.TIBBER_PRICE_ADJUSTMENT_PER_KWH,
+      0,
+    ),
   });
 }
 
