@@ -437,6 +437,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
                 startsAt: slot.startsAt,
                 loadPeriod: quote.loadPeriod,
                 season: quote.season,
+                transferPerKwh: quote.transferPerKwh,
+                energyTaxPerKwh: quote.energyTaxPerKwh,
+                variableGridPerKwh:
+                  quote.transferPerKwh + quote.energyTaxPerKwh,
                 demandRatePerKwMonth: quote.demandRatePerKwMonth,
               },
             ];
