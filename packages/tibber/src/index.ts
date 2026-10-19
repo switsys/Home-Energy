@@ -44,10 +44,15 @@ export type TibberProviderOptions = Readonly<{
   token: string;
   endpoint?: string;
   fetch?: TibberFetch;
+  priceAdjustmentPerKwh?: number;
 }>;
 
-function mapPrice(price: RawPrice): PriceSlot {
-  return price;
+function mapPrice(price: RawPrice, adjustmentPerKwh: number): PriceSlot {
+  return {
+    ...price,
+    total:
+      price.total === null ? null : price.total + adjustmentPerKwh,
+  };
 }
 
 export class TibberProvider implements EnergyProvider {
@@ -55,14 +60,21 @@ export class TibberProvider implements EnergyProvider {
   private readonly endpoint: string;
   private readonly fetchImpl: TibberFetch;
   private readonly token: string;
+  private readonly priceAdjustmentPerKwh: number;
 
   constructor(options: TibberProviderOptions) {
     const token = options.token.trim();
     if (token.length === 0) throw new TibberApiError("Tibber token is empty");
 
+    const priceAdjustmentPerKwh = options.priceAdjustmentPerKwh ?? 0;
+    if (!Number.isFinite(priceAdjustmentPerKwh)) {
+      throw new TibberApiError("Tibber price adjustment must be a finite number");
+    }
+
     this.token = token;
     this.endpoint = options.endpoint ?? DEFAULT_TIBBER_ENDPOINT;
     this.fetchImpl = options.fetch ?? fetch;
+    this.priceAdjustmentPerKwh = priceAdjustmentPerKwh;
   }
 
   private async query<T>(
@@ -199,9 +211,17 @@ export class TibberProvider implements EnergyProvider {
     return {
       provider: this.id,
       homeId: data.viewer.home.id,
-      current: info?.current ? mapPrice(info.current) : null,
-      today: info?.today.map(mapPrice) ?? [],
-      tomorrow: info?.tomorrow.map(mapPrice) ?? [],
+      current: info?.current
+        ? mapPrice(info.current, this.priceAdjustmentPerKwh)
+        : null,
+      today:
+        info?.today.map((price) =>
+          mapPrice(price, this.priceAdjustmentPerKwh),
+        ) ?? [],
+      tomorrow:
+        info?.tomorrow.map((price) =>
+          mapPrice(price, this.priceAdjustmentPerKwh),
+        ) ?? [],
     };
   }
 
