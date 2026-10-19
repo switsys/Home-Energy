@@ -22,6 +22,7 @@ type InteractivePriceCurveProps = Readonly<{
   peakRiskSlots: readonly PeakRiskSlot[];
   gridScheduleAvailable: boolean;
   propertyName: string;
+  gridVariablePerKwh: number;
   loadMinutes: number;
   loadPowerKw: number;
 }>;
@@ -258,12 +259,31 @@ export function InteractivePriceCurve({
   peakRiskSlots,
   gridScheduleAvailable,
   propertyName,
+  gridVariablePerKwh,
   loadMinutes,
   loadPowerKw,
 }: InteractivePriceCurveProps) {
+  const deliveredSlots = useMemo(
+    () =>
+      slots.map((slot) => ({
+        ...slot,
+        total: slot.total + gridVariablePerKwh,
+      })),
+    [slots, gridVariablePerKwh],
+  );
+  const deliveredCurrentPrice = useMemo(
+    () =>
+      currentPrice === null
+        ? null
+        : {
+            ...currentPrice,
+            total: currentPrice.total + gridVariablePerKwh,
+          },
+    [currentPrice, gridVariablePerKwh],
+  );
   const curve = useMemo(
-    () => buildCurve(slots, currentStartsAt),
-    [slots, currentStartsAt],
+    () => buildCurve(deliveredSlots, currentStartsAt),
+    [deliveredSlots, currentStartsAt],
   );
   const [selectedIndex, setSelectedIndex] = useState<number | null>(
     curve && curve.currentIndex >= 0 ? curve.currentIndex : null,
@@ -345,10 +365,10 @@ export function InteractivePriceCurve({
     selected === null ? null : selected.total - activeCurve.average;
   const versusNow =
     selected === null ||
-    currentPrice === null ||
-    selected.currency !== currentPrice.currency
+    deliveredCurrentPrice === null ||
+    selected.currency !== deliveredCurrentPrice.currency
       ? null
-      : selected.total - currentPrice.total;
+      : selected.total - deliveredCurrentPrice.total;
   const averagePercent =
     selected !== null && activeCurve.average > 0.01
       ? ((selected.total - activeCurve.average) / activeCurve.average) * 100
@@ -407,7 +427,7 @@ export function InteractivePriceCurve({
       <div className="section-heading price-curve-heading">
         <div>
           <span className="kicker">TODAY&apos;S PRICE CURVE</span>
-          <h2>Quarter-hour electricity price</h2>
+          <h2>Quarter-hour delivered variable price</h2>
         </div>
         <small>
           {priceAreaCode ? `${priceAreaCode} · ` : ""}
@@ -420,8 +440,11 @@ export function InteractivePriceCurve({
           <div>
             <span className="label">NOW</span>
             <strong>
-              {currentPrice
-                ? money(currentPrice.total, currentPrice.currency)
+              {deliveredCurrentPrice
+                ? money(
+                    deliveredCurrentPrice.total,
+                    deliveredCurrentPrice.currency,
+                  )
                 : "—"}
             </strong>
           </div>
@@ -841,8 +864,11 @@ export function InteractivePriceCurve({
                       )}
                 </strong>
                 <small>
-                  {currentPrice
-                    ? `Now ${money(currentPrice.total, currentPrice.currency)}/kWh`
+                  {deliveredCurrentPrice
+                    ? `Now ${money(
+                        deliveredCurrentPrice.total,
+                        deliveredCurrentPrice.currency,
+                      )}/kWh delivered`
                     : "Current price unavailable"}
                 </small>
               </div>
@@ -889,7 +915,7 @@ export function InteractivePriceCurve({
                   {selectedIsElapsed
                     ? "Select a future slot for a complete load estimate"
                     : selectedEstimate
-                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · electricity price only`
+                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · variable delivered cost`
                       : `Not enough remaining slots for ${windowMinutes} min`}
                 </small>
               </div>
@@ -928,7 +954,7 @@ export function InteractivePriceCurve({
                     </strong>
                     <small>
                       Same {loadPowerKw.toFixed(1)} kW × {windowMinutes} min load,
-                      electricity price only. Drag the block to compare.
+                      variable delivered cost. Drag the block to compare.
                     </small>
                   </>
                 ) : (
