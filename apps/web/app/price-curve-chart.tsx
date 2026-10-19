@@ -889,7 +889,7 @@ export function InteractivePriceCurve({
                   {selectedIsElapsed
                     ? "Select a future slot for a complete load estimate"
                     : selectedEstimate
-                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · electricity price only`
+                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · variable delivered price`
                       : `Not enough remaining slots for ${windowMinutes} min`}
                 </small>
               </div>
@@ -928,7 +928,8 @@ export function InteractivePriceCurve({
                     </strong>
                     <small>
                       Same {loadPowerKw.toFixed(1)} kW × {windowMinutes} min load,
-                      electricity price only. Drag the block to compare.
+                      including grid transfer and energy tax; monthly effect
+                      charge remains separate. Drag the block to compare.
                     </small>
                   </>
                 ) : (
