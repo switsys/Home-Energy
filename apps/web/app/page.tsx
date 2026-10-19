@@ -713,7 +713,12 @@ export default async function DashboardPage({
                       loadPlan.best.grid.transferCost,
                       loadPlan.best.currency,
                     )}{" "}
-                    grid transfer + energy tax included · peak tariff up to{" "}
+                    grid transfer +{" "}
+                    {money(
+                      loadPlan.best.grid.energyTaxCost,
+                      loadPlan.best.currency,
+                    )}{" "}
+                    energy tax included · peak tariff up to{" "}
                     {number(
                       loadPlan.best.grid.highestDemandRatePerKwMonth,
                       0,
