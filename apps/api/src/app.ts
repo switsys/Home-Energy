@@ -109,6 +109,25 @@ function cacheLifetime(schedule: PriceSchedule): number {
   return schedule.tomorrow.length > 0 ? PRICE_CACHE_MS : PRICE_RETRY_CACHE_MS;
 }
 
+// A schedule's "today" stops being valid when its next calendar day begins.
+// Limit the cache to that boundary even when Tibber has supplied tomorrow's prices.
+function priceCacheExpiresAt(schedule: PriceSchedule, now: Date): number {
+  const tomorrowStarts = schedule.tomorrow
+    .map(priceStartsAt)
+    .filter((start): start is number => start !== null);
+  const todayStarts = schedule.today
+    .map(priceStartsAt)
+    .filter((start): start is number => start !== null);
+  const rollover =
+    tomorrowStarts.length > 0
+      ? Math.min(...tomorrowStarts)
+      : todayStarts.length > 0
+        ? Math.max(...todayStarts) + 15 * 60 * 1000
+        : Number.POSITIVE_INFINITY;
+
+  return Math.min(now.getTime() + cacheLifetime(schedule), rollover);
+}
+
 function sumComplete(values: readonly (number | null)[]): number | null {
   if (values.some((value) => value === null)) return null;
   return values.reduce((sum, value) => sum + (value ?? 0), 0);
@@ -200,7 +219,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
     const value = await provider.prices(homeId);
     priceCache.set(homeId, {
-      expiresAt: now.getTime() + cacheLifetime(value),
+      expiresAt: priceCacheExpiresAt(value, now),
       value,
     });
     return deriveCurrentPrice(value, now);

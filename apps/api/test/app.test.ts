@@ -73,6 +73,99 @@ describe("Home-Energy API", () => {
     expect(allowed.statusCode).toBe(200);
     expect(allowed.json()).toMatchObject({ provider: "fake", homeId: "home-1" });
   });
+  it("refreshes the price schedule at midnight even with tomorrow prices cached", async () => {
+    let now = new Date("2026-10-20T23:45:00+02:00");
+    const lastToday = {
+      total: 1,
+      energy: 1,
+      tax: 0,
+      startsAt: "2026-10-20T23:45:00+02:00",
+      currency: "SEK",
+      level: "NORMAL" as const,
+    };
+    const firstTomorrow = {
+      ...lastToday,
+      total: 2,
+      energy: 2,
+      startsAt: "2026-10-21T00:00:00+02:00",
+    };
+    const before: PriceSchedule = {
+      ...schedule,
+      current: lastToday,
+      today: [lastToday],
+      tomorrow: [firstTomorrow],
+    };
+    const after: PriceSchedule = {
+      ...schedule,
+      current: firstTomorrow,
+      today: [firstTomorrow],
+      tomorrow: [],
+    };
+    const fetchPrices = vi.fn().mockResolvedValueOnce(before).mockResolvedValue(after);
+    const app = buildApp({
+      provider: { ...provider, prices: fetchPrices },
+      apiKey: "secret",
+      defaultHomeId: "home-1",
+      clock: () => now,
+    });
+    const request = () =>
+      app.inject({
+        headers: { "x-home-energy-key": "secret" },
+        method: "GET",
+        url: "/api/energy/prices",
+      });
+
+    expect((await request()).json().today[0].startsAt).toBe(lastToday.startsAt);
+    now = new Date("2026-10-20T23:50:00+02:00");
+    await request();
+    expect(fetchPrices).toHaveBeenCalledTimes(1);
+
+    now = new Date("2026-10-21T00:01:00+02:00");
+    expect((await request()).json().today[0].startsAt).toBe(firstTomorrow.startsAt);
+    expect(fetchPrices).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes after midnight without tomorrow data, including the DST-change day", async () => {
+    let now = new Date("2026-10-25T23:45:00+01:00");
+    const lastToday = {
+      total: 1,
+      energy: 1,
+      tax: 0,
+      startsAt: "2026-10-25T23:45:00+01:00",
+      currency: "SEK",
+      level: "NORMAL" as const,
+    };
+    const nextToday = {
+      ...lastToday,
+      startsAt: "2026-10-26T00:00:00+01:00",
+    };
+    const fetchPrices = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...schedule,
+        today: [lastToday],
+        tomorrow: [],
+      })
+      .mockResolvedValue({ ...schedule, today: [nextToday], tomorrow: [] });
+    const app = buildApp({
+      provider: { ...provider, prices: fetchPrices },
+      apiKey: "secret",
+      defaultHomeId: "home-1",
+      clock: () => now,
+    });
+    const request = () =>
+      app.inject({
+        headers: { "x-home-energy-key": "secret" },
+        method: "GET",
+        url: "/api/energy/prices",
+      });
+
+    await request();
+    now = new Date("2026-10-26T00:01:00+01:00");
+    expect((await request()).json().today[0].startsAt).toBe(nextToday.startsAt);
+    expect(fetchPrices).toHaveBeenCalledTimes(2);
+  });
+
   it("plans a load without exposing the provider credential", async () => {
     const today: PriceSchedule["today"] = [
       {
