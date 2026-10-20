@@ -1269,3 +1269,57 @@ footer {
     grid-column: auto;
   }
 }
+
+/* Price history navigation remains accessible on narrow mobile displays. */
+.price-period-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(9, 13, 11, .48);
+}
+.price-period-toolbar button {
+  padding: 8px 14px;
+  border: 1px solid #304137;
+  border-radius: 8px;
+  background: transparent;
+  color: #a8b9ae;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.price-period-toolbar button[aria-pressed="true"] {
+  color: #e0f1e5;
+  border-color: rgba(111, 211, 154, .45);
+  background: rgba(111, 211, 154, .15);
+}
+.price-period-toolbar button:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+.price-period-toolbar button:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+.price-period-toolbar small {
+  margin-left: auto;
+  color: #88998f;
+  font-size: 10px;
+}
+@media (max-width: 620px) {
+  .price-period-toolbar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 12px;
+  }
+  .price-period-toolbar button {
+    flex: 1 1 28%;
+    padding-inline: 6px;
+  }
+  .price-period-toolbar small {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+}

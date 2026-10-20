@@ -483,6 +483,7 @@ export default async function DashboardPage({
                 : "—"}
             </div>
             <span className="unit">per kWh</span>
+            <small>Supplier price · network/grid fees are separate.</small>
             {advice.current?.level ? (
               <span className="pill">
                 {advice.current.level.replaceAll("_", " ")}
@@ -563,6 +564,12 @@ export default async function DashboardPage({
           peakRiskSlots={peakRiskSlots}
           priceAreaCode={activeConnection?.priceAreaCode ?? null}
           slots={prices.today}
+          tomorrowSlots={prices.tomorrow}
+          tomorrowPeakRiskSlots={
+            gridSchedule?.tomorrow.filter(
+              (slot) => slot.loadPeriod === "high" && slot.demandRatePerKwMonth > 0,
+            ) ?? []
+          }
         />
 
         <section className="section planner-section">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { selectPriceCurveSlots, type PriceCurvePeriod } from "./price-curve-period";
 
 type PriceSlot = Readonly<{
   startsAt: string;
@@ -16,6 +17,8 @@ type PeakRiskSlot = Readonly<{
 
 type InteractivePriceCurveProps = Readonly<{
   slots: readonly PriceSlot[];
+  tomorrowSlots: readonly PriceSlot[];
+  tomorrowPeakRiskSlots: readonly PeakRiskSlot[];
   currentStartsAt: string | null;
   currentPrice: PriceSlot | null;
   priceAreaCode: string | null;
@@ -30,6 +33,16 @@ const STOCKHOLM = "Europe/Stockholm";
 
 function formatTime(value: string): string {
   return new Intl.DateTimeFormat("sv-SE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: STOCKHOLM,
+  }).format(new Date(value));
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    day: "numeric",
+    month: "short",
     hour: "2-digit",
     minute: "2-digit",
     timeZone: STOCKHOLM,
@@ -208,16 +221,16 @@ function buildCurve(
         (slot) => Date.parse(slot.startsAt) === currentStartsAtMs,
       )
     : -1;
-  const tickHours = ["00", "06", "12", "18"] as const;
-  const timeTicks: Array<{ label: string; x: number }> =
-    tickHours.flatMap((label) => {
-      const slot = values.find(
-        (value) => formatTime(value.startsAt) === `${label}:00`,
-      );
-      return slot
-        ? [{ label, x: xForTime(Date.parse(slot.startsAt)) }]
-        : [];
-    });
+  const tickTimes = new Set(["00:00", "06:00", "12:00", "18:00"]);
+  const timeTicks = values.flatMap((slot) => {
+    const localTime = formatTime(slot.startsAt);
+    return tickTimes.has(localTime)
+      ? [{
+          label: localTime.slice(0, 2),
+          x: xForTime(Date.parse(slot.startsAt)),
+        }]
+      : [];
+  });
 
   if (formatTime(values[values.length - 1]!.startsAt) === "23:45") {
     timeTicks.push({ label: "24", x: xForTime(domainEndMs) });
@@ -252,6 +265,8 @@ function buildCurve(
 
 export function InteractivePriceCurve({
   slots,
+  tomorrowSlots,
+  tomorrowPeakRiskSlots,
   currentStartsAt,
   currentPrice,
   priceAreaCode,
@@ -261,9 +276,18 @@ export function InteractivePriceCurve({
   loadMinutes,
   loadPowerKw,
 }: InteractivePriceCurveProps) {
+  const [period, setPeriod] = useState<PriceCurvePeriod>("today");
+  const visibleSlots = useMemo(
+    () => selectPriceCurveSlots(slots, tomorrowSlots, period),
+    [slots, tomorrowSlots, period],
+  );
+  const visiblePeakRiskSlots = useMemo(
+    () => selectPriceCurveSlots(peakRiskSlots, tomorrowPeakRiskSlots, period),
+    [peakRiskSlots, tomorrowPeakRiskSlots, period],
+  );
   const curve = useMemo(
-    () => buildCurve(slots, currentStartsAt),
-    [slots, currentStartsAt],
+    () => buildCurve(visibleSlots, currentStartsAt),
+    [visibleSlots, currentStartsAt],
   );
   const [selectedIndex, setSelectedIndex] = useState<number | null>(
     curve && curve.currentIndex >= 0 ? curve.currentIndex : null,
@@ -273,6 +297,12 @@ export function InteractivePriceCurve({
 
   if (curve === null) return null;
   const activeCurve = curve;
+  const averageLabel =
+    period === "today"
+      ? "today's average"
+      : period === "tomorrow"
+        ? "tomorrow's average"
+        : "two-day average";
 
   const selected =
     selectedIndex === null ? null : activeCurve.values[selectedIndex] ?? null;
@@ -285,7 +315,7 @@ export function InteractivePriceCurve({
   const selectedPeak =
     selectedStartsAtMs === null
       ? null
-      : peakRiskSlots.find(
+      : visiblePeakRiskSlots.find(
           (slot) => Date.parse(slot.startsAt) === selectedStartsAtMs,
         ) ?? null;
   const selectedIsElapsed =
@@ -312,7 +342,7 @@ export function InteractivePriceCurve({
   const selectedWindowPeaks =
     selectedStartsAtMs === null || selectedWindowEndMs === null
       ? []
-      : peakRiskSlots.filter((slot) => {
+      : visiblePeakRiskSlots.filter((slot) => {
           const startsAtMs = Date.parse(slot.startsAt);
           return (
             startsAtMs >= selectedStartsAtMs &&
@@ -406,7 +436,13 @@ export function InteractivePriceCurve({
     <section className="section price-curve-section">
       <div className="section-heading price-curve-heading">
         <div>
-          <span className="kicker">TODAY&apos;S PRICE CURVE</span>
+          <span className="kicker">
+            {period === "today"
+              ? "TODAY'S PRICE CURVE"
+              : period === "tomorrow"
+                ? "TOMORROW'S PRICE CURVE"
+                : "TWO-DAY PRICE CURVE"}
+          </span>
           <h2>Quarter-hour electricity price</h2>
         </div>
         <small>
@@ -416,6 +452,25 @@ export function InteractivePriceCurve({
       </div>
 
       <article className="price-curve-card">
+        <div className="price-period-toolbar" role="group" aria-label="Price chart period">
+          {(["today", "tomorrow", "2days"] as const).map((option) => (
+            <button
+              aria-pressed={period === option}
+              disabled={option !== "today" && tomorrowSlots.length === 0}
+              key={option}
+              onClick={() => {
+                setPeriod(option);
+                setSelectedIndex(null);
+              }}
+              type="button"
+            >
+              {option === "2days" ? "2 Days" : option === "today" ? "Today" : "Tomorrow"}
+            </button>
+          ))}
+          {tomorrowSlots.length === 0 ? (
+            <small>Tomorrow's prices are not available yet.</small>
+          ) : null}
+        </div>
         <div className="price-curve-stats">
           <div>
             <span className="label">NOW</span>
@@ -525,7 +580,7 @@ export function InteractivePriceCurve({
                 left: `${Math.min(92, Math.max(8, (selectedX / activeCurve.width) * 100))}%`,
               }}
             >
-              <span>{formatTime(selected.startsAt)}</span>
+              <span>{formatDateTime(selected.startsAt)}</span>
               <strong>{money(selected.total, selected.currency)}</strong>
               <small>
                 {selected.level
@@ -608,7 +663,7 @@ export function InteractivePriceCurve({
                 </>
               ) : null}
 
-              {peakRiskSlots.map((slot) => {
+              {visiblePeakRiskSlots.map((slot) => {
                 const startsAtMs = Date.parse(slot.startsAt);
                 if (!Number.isFinite(startsAtMs)) return null;
                 const x = activeCurve.xForTime(startsAtMs);
@@ -817,7 +872,7 @@ export function InteractivePriceCurve({
                     : signedPriceDifference(
                         versusAverage,
                         selected.currency,
-                        "today's average",
+                        averageLabel,
                       )}
                 </strong>
                 <small>
@@ -916,7 +971,7 @@ export function InteractivePriceCurve({
                     </strong>
                     <small>
                       A {windowMinutes}-minute runtime does not fit from the
-                      selected start before today&apos;s schedule ends.
+                      selected start before the selected price schedule ends.
                     </small>
                   </>
                 ) : selectedSavings !== null && selectedSavings > 0.005 ? (
@@ -937,7 +992,7 @@ export function InteractivePriceCurve({
                     <strong>Best available future window for this load</strong>
                     <small>
                       No cheaper complete {windowMinutes}-minute window remains
-                      in today&apos;s price schedule.
+                      in the selected price period.
                     </small>
                   </>
                 )}
@@ -950,18 +1005,18 @@ export function InteractivePriceCurve({
           <span><i className="price-dot cheap" /> cheaper</span>
           <span><i className="price-dot normal" /> normal</span>
           <span><i className="price-dot expensive" /> expensive</span>
-          {peakRiskSlots.length > 0 ? (
+          {visiblePeakRiskSlots.length > 0 ? (
             <span>
               <i className="price-dot peak-risk" />
               effect-charge window
             </span>
           ) : gridScheduleAvailable ? (
             <span className="price-peak-inactive">
-              effect charge inactive today
+              effect charge inactive in this view
             </span>
           ) : null}
           <span className="price-average-note">
-            drag or tap to inspect · dashed = daily average
+            drag or tap to inspect · dashed = selected period average
           </span>
         </div>
       </article>
