@@ -18,6 +18,8 @@ type PriceSchedule = Readonly<{
 
 type GridScheduleSlot = Readonly<{
   startsAt: string;
+  currency: string;
+  transferPerKwh: number;
   loadPeriod: "low" | "high";
   season: "summer" | "winter";
   demandRatePerKwMonth: number;
@@ -330,6 +332,10 @@ export default async function DashboardPage({
     queryNumber(query.minutes, 120, 15, 24 * 60),
   );
   const plannerPowerKw = queryNumber(query.powerKw, 1.5, 0.1, 100);
+  const requestedHomeId = queryString(query.homeId);
+  const selectedHomeQuery = requestedHomeId === null
+    ? ""
+    : `?homeId=${encodeURIComponent(requestedHomeId)}`;
   let advice: Advice;
   let prices: PriceSchedule;
   let property: EnergyProperty;
@@ -337,8 +343,8 @@ export default async function DashboardPage({
 
   try {
     [advice, prices, property, consumption] = await Promise.all([
-      api<Advice>("/api/energy/advice"),
-      api<PriceSchedule>("/api/energy/prices"),
+      api<Advice>(`/api/energy/advice${selectedHomeQuery}`),
+      api<PriceSchedule>(`/api/energy/prices${selectedHomeQuery}`),
       api<EnergyProperty>("/api/energy/property"),
       api<PropertyConsumption>(`/api/energy/property/consumption?days=${consumptionDays}`),
     ]);
@@ -355,7 +361,7 @@ export default async function DashboardPage({
   }
 
   const gridFeeConnections = stableGridFeeConnections(property);
-  const requestedPlannerHomeId = queryString(query.homeId);
+  const requestedPlannerHomeId = requestedHomeId;
   const plannerConnection =
     gridFeeConnections.find(
       (connection) => connection.providerHomeId === requestedPlannerHomeId,
@@ -417,7 +423,9 @@ export default async function DashboardPage({
   }
 
   try {
-    gridSchedule = await api<GridSchedule>("/api/energy/grid-schedule");
+    gridSchedule = await api<GridSchedule>(
+      `/api/energy/grid-schedule?homeId=${encodeURIComponent(advice.homeId)}`,
+    );
   } catch {
     gridSchedule = null;
   }
@@ -429,6 +437,16 @@ export default async function DashboardPage({
     gridSchedule?.today.filter(
       (slot) => slot.loadPeriod === "high" && slot.demandRatePerKwMonth > 0,
     ) ?? [];
+  const currentPrice = advice.current ?? prices.current;
+  const currentGridSlot = currentPrice === null || currentPrice.startsAt === null
+    ? null
+    : gridSchedule?.today.find((slot) =>
+        Date.parse(slot.startsAt) === Date.parse(currentPrice.startsAt) &&
+        slot.currency === currentPrice.currency,
+      ) ?? null;
+  const withGridTransfer = currentPrice && currentGridSlot
+    ? currentPrice.total + currentGridSlot.transferPerKwh
+    : null;
   const signal = signalText(advice.recommendation.action);
   const allPeaksInactive =
     propertyPeaks?.connections.every(
@@ -483,7 +501,13 @@ export default async function DashboardPage({
                 : "—"}
             </div>
             <span className="unit">per kWh</span>
-            <small>Supplier price · network/grid fees are separate.</small>
+            <small>Tibber API price · electricity and taxes, excluding grid fees.</small>
+            {withGridTransfer !== null && currentPrice ? (
+              <small>
+                Including modeled grid transfer: {money(withGridTransfer, currentPrice.currency)}/kWh.
+                Fixed charges, demand fees and other app-selected fees are not included.
+              </small>
+            ) : null}
             {advice.current?.level ? (
               <span className="pill">
                 {advice.current.level.replaceAll("_", " ")}
@@ -559,6 +583,8 @@ export default async function DashboardPage({
           }
           propertyName={property.name}
           gridScheduleAvailable={gridSchedule !== null}
+          gridTransferSlots={gridSchedule?.today ?? []}
+          tomorrowGridTransferSlots={gridSchedule?.tomorrow ?? []}
           loadMinutes={plannerMinutes}
           loadPowerKw={plannerPowerKw}
           peakRiskSlots={peakRiskSlots}

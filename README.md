@@ -44,6 +44,10 @@ Copy `.env.example` to `.env` and set:
 
 The dashboard reads the API key server-side and does not expose it to the browser.
 
+## Price comparison with Tibber
+
+The Tibber GraphQL `priceInfo.total` is the reported supplier electricity price including taxes. It does not automatically include all charges selected in the Tibber app's price widget. The dashboard defaults to this source price and provides a **+ Grid transfer** view when the corresponding modeled tariff quotes are available for every displayed interval. That view adds only the variable per-kWh grid-transfer tariff and explicitly excludes fixed fees, demand charges, and any other app-selected fees; it is an estimate, not a guaranteed reproduction of Tibber's app display or final invoice. The load planner continues to add the grid-transfer tariff only once, independently of the chart display option.
+
 ## Build and test
 
 ```bash

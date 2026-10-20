@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { selectPriceCurveSlots, type PriceCurvePeriod } from "./price-curve-period";
+import { addGridTransferToPrices, type GridTransferSlot } from "./price-components";
 
 type PriceSlot = Readonly<{
   startsAt: string;
@@ -19,6 +20,8 @@ type InteractivePriceCurveProps = Readonly<{
   slots: readonly PriceSlot[];
   tomorrowSlots: readonly PriceSlot[];
   tomorrowPeakRiskSlots: readonly PeakRiskSlot[];
+  gridTransferSlots: readonly GridTransferSlot[];
+  tomorrowGridTransferSlots: readonly GridTransferSlot[];
   currentStartsAt: string | null;
   currentPrice: PriceSlot | null;
   priceAreaCode: string | null;
@@ -267,6 +270,8 @@ export function InteractivePriceCurve({
   slots,
   tomorrowSlots,
   tomorrowPeakRiskSlots,
+  gridTransferSlots,
+  tomorrowGridTransferSlots,
   currentStartsAt,
   currentPrice,
   priceAreaCode,
@@ -277,10 +282,32 @@ export function InteractivePriceCurve({
   loadPowerKw,
 }: InteractivePriceCurveProps) {
   const [period, setPeriod] = useState<PriceCurvePeriod>("today");
-  const visibleSlots = useMemo(
-    () => selectPriceCurveSlots(slots, tomorrowSlots, period),
-    [slots, tomorrowSlots, period],
+  const [includeGridTransfer, setIncludeGridTransfer] = useState(false);
+  const gridToday = useMemo(
+    () => addGridTransferToPrices(slots, gridTransferSlots),
+    [slots, gridTransferSlots],
   );
+  const gridTomorrow = useMemo(
+    () => addGridTransferToPrices(tomorrowSlots, tomorrowGridTransferSlots),
+    [tomorrowSlots, tomorrowGridTransferSlots],
+  );
+  const gridPriceAvailable = gridScheduleAvailable && gridToday !== null && gridTomorrow !== null;
+  const showingGridTransfer = includeGridTransfer && gridPriceAvailable;
+  const visibleSlots = useMemo(
+    () => selectPriceCurveSlots(
+      showingGridTransfer ? gridToday! : slots,
+      showingGridTransfer ? gridTomorrow! : tomorrowSlots,
+      period,
+    ),
+    [slots, tomorrowSlots, gridToday, gridTomorrow, showingGridTransfer, period],
+  );
+  const currentGridQuote = currentPrice === null ? null : gridTransferSlots.find(
+    (slot) => Date.parse(slot.startsAt) === Date.parse(currentPrice.startsAt) &&
+      slot.currency === currentPrice.currency,
+  ) ?? null;
+  const displayCurrentPrice = showingGridTransfer && currentPrice && currentGridQuote
+    ? { ...currentPrice, total: currentPrice.total + currentGridQuote.transferPerKwh }
+    : currentPrice;
   const visiblePeakRiskSlots = useMemo(
     () => selectPriceCurveSlots(peakRiskSlots, tomorrowPeakRiskSlots, period),
     [peakRiskSlots, tomorrowPeakRiskSlots, period],
@@ -375,10 +402,10 @@ export function InteractivePriceCurve({
     selected === null ? null : selected.total - activeCurve.average;
   const versusNow =
     selected === null ||
-    currentPrice === null ||
-    selected.currency !== currentPrice.currency
+    displayCurrentPrice === null ||
+    selected.currency !== displayCurrentPrice.currency
       ? null
-      : selected.total - currentPrice.total;
+      : selected.total - displayCurrentPrice.total;
   const averagePercent =
     selected !== null && activeCurve.average > 0.01
       ? ((selected.total - activeCurve.average) / activeCurve.average) * 100
@@ -471,12 +498,31 @@ export function InteractivePriceCurve({
             <small>Tomorrow's prices are not available yet.</small>
           ) : null}
         </div>
+        <div className="load-window-toolbar">
+          <div>
+            <span className="label">PRICE COMPONENTS</span>
+            <small>
+              {showingGridTransfer
+                ? "Electricity + taxes + modeled variable grid transfer. Fixed, demand and other app-selected fees excluded."
+                : "Tibber API electricity + taxes; grid transfer is separate."}
+            </small>
+          </div>
+          <div className="load-window-options" role="group" aria-label="Price components">
+            <button type="button" aria-pressed={!showingGridTransfer}
+              className={!showingGridTransfer ? "load-window-active" : undefined}
+              onClick={() => setIncludeGridTransfer(false)}>Electricity</button>
+            <button type="button" aria-pressed={showingGridTransfer}
+              className={showingGridTransfer ? "load-window-active" : undefined}
+              disabled={!gridPriceAvailable}
+              onClick={() => setIncludeGridTransfer(true)}>+ Grid transfer</button>
+          </div>
+        </div>
         <div className="price-curve-stats">
           <div>
             <span className="label">NOW</span>
             <strong>
-              {currentPrice
-                ? money(currentPrice.total, currentPrice.currency)
+              {displayCurrentPrice
+                ? money(displayCurrentPrice.total, displayCurrentPrice.currency)
                 : "—"}
             </strong>
           </div>
@@ -896,8 +942,8 @@ export function InteractivePriceCurve({
                       )}
                 </strong>
                 <small>
-                  {currentPrice
-                    ? `Now ${money(currentPrice.total, currentPrice.currency)}/kWh`
+                  {displayCurrentPrice
+                    ? `Now ${money(displayCurrentPrice.total, displayCurrentPrice.currency)}/kWh`
                     : "Current price unavailable"}
                 </small>
               </div>
@@ -944,7 +990,7 @@ export function InteractivePriceCurve({
                   {selectedIsElapsed
                     ? "Select a future slot for a complete load estimate"
                     : selectedEstimate
-                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · electricity price only`
+                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · ${showingGridTransfer ? "incl. modeled grid transfer" : "electricity price only"}`
                       : `Not enough remaining slots for ${windowMinutes} min`}
                 </small>
               </div>
@@ -983,7 +1029,7 @@ export function InteractivePriceCurve({
                     </strong>
                     <small>
                       Same {loadPowerKw.toFixed(1)} kW × {windowMinutes} min load,
-                      electricity price only. Drag the block to compare.
+                      {showingGridTransfer ? "Including modeled grid transfer" : "Electricity price only"}. Drag the block to compare.
                     </small>
                   </>
                 ) : (

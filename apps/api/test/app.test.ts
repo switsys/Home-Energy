@@ -369,6 +369,8 @@ describe("Home-Energy API", () => {
       today: [
         {
           startsAt: "2026-11-10T06:45:00+01:00",
+          currency: "SEK",
+          transferPerKwh: 0.1125,
           loadPeriod: "low",
           demandRatePerKwMonth: 0,
         },

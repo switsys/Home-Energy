@@ -454,6 +454,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
             return [
               {
                 startsAt: slot.startsAt,
+                currency: quote.currency,
+                transferPerKwh: quote.transferPerKwh,
                 loadPeriod: quote.loadPeriod,
                 season: quote.season,
                 demandRatePerKwMonth: quote.demandRatePerKwMonth,
