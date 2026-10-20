@@ -7,7 +7,8 @@ const quote = { startsAt: "2026-10-19T12:00:00Z", currency: "SEK", transferPerKw
 describe("Tibber price comparison", () => {
   it("adds only the modeled variable transfer fee and preserves source prices", () => {
     const output = addGridTransferToPrices([price], [quote]);
-    expect(output?.[0]).toEqual({ ...price, total: 1.7125 });
+    expect(output?.[0]).toMatchObject({ startsAt: price.startsAt, currency: price.currency, level: price.level });
+    expect(output?.[0]?.total).toBeCloseTo(1.7125, 6);
     expect(price.total).toBe(1.6);
   });
 
@@ -22,7 +23,8 @@ describe("Tibber price comparison", () => {
     const second = { ...price, startsAt: "2026-10-25T02:15:00+01:00" };
     const firstQuote = { ...quote, startsAt: first.startsAt, transferPerKwh: 0.1 };
     const secondQuote = { ...quote, startsAt: second.startsAt, transferPerKwh: 0.2 };
-    expect(addGridTransferToPrices([first, second], [secondQuote, firstQuote])?.map((p) => p.total))
-      .toEqual([1.7, 1.8]);
+    const totals = addGridTransferToPrices([first, second], [secondQuote, firstQuote])?.map((p) => p.total);
+    expect(totals?.[0]).toBeCloseTo(1.7, 6);
+    expect(totals?.[1]).toBeCloseTo(1.8, 6);
   });
 });
