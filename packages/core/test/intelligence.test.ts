@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEnergyAdvice, type PriceSchedule, type PriceSlot } from "../src/index.js";
+import { buildEnergyAdvice, variableDeliveredSchedule, faluElnat2026, type PriceSchedule, type PriceSlot } from "../src/index.js";
 
 function price(startsAt: string, total: number, level: PriceSlot["level"] = null): PriceSlot {
   return {
@@ -109,5 +109,24 @@ describe("buildEnergyAdvice", () => {
     );
 
     expect(advice.cheapestWindows.minutes120?.average).toBe(1.20676);
+  });
+});
+
+describe("separately billed Falu variable charges", () => {
+  it("keeps Tibber raw prices intact and uses delivered totals for advice", () => {
+    const current = price("2026-10-23T18:30:00+02:00", 1.681, "VERY_EXPENSIVE");
+    const raw = schedule(current, [current]);
+    const modeled = variableDeliveredSchedule(raw, faluElnat2026);
+    expect(modeled.current?.total).toBeCloseTo(2.2435, 6);
+    expect(raw.current?.total).toBe(1.681);
+    const advice = buildEnergyAdvice(raw, new Date("2026-10-23T18:37:00+02:00"), faluElnat2026);
+    expect(advice.current?.total).toBeCloseTo(2.2435, 6);
+  });
+
+  it("preserves missing values, avoids inventing prices from a grid quote", () => {
+    const missing = { ...price("2026-10-23T18:30:00+02:00", 1), total: null };
+    const modeled = variableDeliveredSchedule(schedule(missing, [missing]), faluElnat2026);
+    expect(modeled.current?.total).toBeNull();
+    expect(modeled.today[0].total).toBeNull();
   });
 });

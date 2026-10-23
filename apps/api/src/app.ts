@@ -133,7 +133,7 @@ function priceCacheExpiresAt(schedule: PriceSchedule, now: Date): number {
 
 function sumComplete(values: readonly (number | null)[]): number | null {
   if (values.some((value) => value === null)) return null;
-  return values.reduce((sum, value) => sum + (value ?? 0), 0);
+  return values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }
 
 function commonCurrency(values: readonly (string | null)[]): string | null {
@@ -459,6 +459,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
                 startsAt: slot.startsAt,
                 currency: quote.currency,
                 transferPerKwh: quote.transferPerKwh,
+                energyTaxPerKwh: quote.energyTaxPerKwh ?? 0,
+                variableGridPerKwh: quote.transferPerKwh + (quote.energyTaxPerKwh ?? 0),
                 loadPeriod: quote.loadPeriod,
                 season: quote.season,
                 demandRatePerKwMonth: quote.demandRatePerKwMonth,
@@ -486,7 +488,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     async (request, reply) => {
       try {
         const homeId = await resolveHomeId(request.query.homeId);
-        return buildEnergyAdvice(await prices(homeId), clock());
+        return buildEnergyAdvice(await prices(homeId), clock(), gridTariff);
       } catch (error) {
         return unavailable(reply, error);
       }

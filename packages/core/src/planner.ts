@@ -41,6 +41,7 @@ export type LoadPlanGridSummary = Readonly<{
   tariffId: string;
   label: string;
   transferCost: number;
+  energyTaxCost: number;
   highestDemandRatePerKwMonth: number;
   peakWindowMinutes: number;
   peakAveragingCount: number;
@@ -58,6 +59,7 @@ export type LoadPlanWindow = Readonly<{
   averagePrice: number;
   energyPriceCost: number;
   gridTransferCost: number;
+  gridEnergyTaxCost: number;
   estimatedCost: number;
   comparisonCost: number;
   currency: string;
@@ -131,6 +133,7 @@ function buildWindow(
   let cursor = startMs;
   let energyPriceCost = 0;
   let gridTransferCost = 0;
+  let gridEnergyTaxCost = 0;
   let currency: string | null = null;
   let gridLabel: string | null = null;
   let gridTariffId: string | null = null;
@@ -176,6 +179,7 @@ function buildWindow(
       }
 
       gridTransferCost += quote.transferPerKwh * powerKw * overlapHours;
+      gridEnergyTaxCost += (quote.energyTaxPerKwh ?? 0) * powerKw * overlapHours;
       gridLabel = quote.label;
       gridTariffId = quote.tariffId;
       peakWindowMinutes = quote.peakWindowMinutes;
@@ -217,7 +221,7 @@ function buildWindow(
   if (cursor < endMs || currency === null) return null;
 
   const energyKwh = powerKw * (durationMinutes / 60);
-  const estimatedCost = energyPriceCost + gridTransferCost;
+  const estimatedCost = energyPriceCost + gridTransferCost + gridEnergyTaxCost;
   const periods = [...gridPeriods.values()].map((period) => ({
     ...period,
     minutes: round(period.minutes, 1),
@@ -255,6 +259,7 @@ function buildWindow(
     averagePrice: round(estimatedCost / energyKwh),
     energyPriceCost: round(energyPriceCost),
     gridTransferCost: round(gridTransferCost),
+    gridEnergyTaxCost: round(gridEnergyTaxCost),
     estimatedCost: round(estimatedCost),
     comparisonCost: round(comparisonCost),
     currency,
@@ -265,6 +270,7 @@ function buildWindow(
             tariffId: gridTariffId,
             label: gridLabel,
             transferCost: round(gridTransferCost),
+            energyTaxCost: round(gridEnergyTaxCost),
             highestDemandRatePerKwMonth: Math.max(
               ...periods.map((period) => period.demandRatePerKwMonth),
             ),

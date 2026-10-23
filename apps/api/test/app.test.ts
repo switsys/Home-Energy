@@ -73,6 +73,27 @@ describe("Home-Energy API", () => {
     expect(allowed.statusCode).toBe(200);
     expect(allowed.json()).toMatchObject({ provider: "fake", homeId: "home-1" });
   });
+  it("keeps the raw Tibber API unchanged but gives tariff-aware delivered advice", async () => {
+    const app = buildApp({
+      provider,
+      apiKey: "secret",
+      defaultHomeId: "home-1",
+      gridTariff: faluElnat2026,
+      clock: () => new Date("2026-10-06T14:07:00+02:00"),
+    });
+    const call = async (path: string) => app.inject({
+      method: "GET",
+      url: path,
+      headers: { "x-home-energy-key": "secret" },
+    });
+    const source = await call("/api/energy/prices");
+    const advice = await call("/api/energy/advice");
+    expect(source.statusCode).toBe(200);
+    expect(advice.statusCode).toBe(200);
+    expect(source.json().current.total).toBe(0.25);
+    expect(advice.json().current.total).toBeCloseTo(0.8125, 6);
+  });
+
   it("refreshes a complete Tibber price schedule hourly", async () => {
     let now = new Date("2026-10-23T14:00:00+02:00");
     const today = {
@@ -394,9 +415,11 @@ describe("Home-Energy API", () => {
       best: {
         energyPriceCost: 2,
         gridTransferCost: 0.225,
-        estimatedCost: 2.225,
+        gridEnergyTaxCost: 0.9,
+        estimatedCost: 3.125,
         grid: {
           tariffId: "falu-elnat-2026",
+          energyTaxCost: 0.9,
           highestDemandRatePerKwMonth: 0,
           demandChargeIncludedInEstimatedCost: false,
         },
@@ -473,6 +496,8 @@ describe("Home-Energy API", () => {
           startsAt: "2026-11-10T06:45:00+01:00",
           currency: "SEK",
           transferPerKwh: 0.1125,
+          energyTaxPerKwh: 0.45,
+          variableGridPerKwh: 0.5625,
           loadPeriod: "low",
           demandRatePerKwMonth: 0,
         },
@@ -652,7 +677,7 @@ describe("Home-Energy API", () => {
     expect(response.json()).toMatchObject({
       action: "wait",
       immediate: {
-        comparisonCost: 76.7,
+        comparisonCost: 80.3,
         grid: {
           demandImpact: {
             status: "definite",
@@ -663,7 +688,7 @@ describe("Home-Energy API", () => {
       },
       best: {
         startsAt: "2026-11-10T18:00:00.000Z",
-        comparisonCost: 8.9,
+        comparisonCost: 12.5,
         grid: {
           demandImpact: {
             status: "none",

@@ -1,3 +1,4 @@
+import type { GridTariff } from "./grid-tariff.js";
 import type {
   EnergyPriceLevel,
   PriceSchedule,
@@ -220,13 +221,44 @@ function recommendation(
   };
 }
 
+/** Use verified per-inlet grid tariff charges for advice, without changing Tibber source data. */
+export function variableDeliveredSchedule(
+  source: PriceSchedule,
+  gridTariff: GridTariff | null,
+): PriceSchedule {
+  if (gridTariff === null) return source;
+  const adjust = (slot: PriceSlot | null): PriceSlot | null => {
+    if (slot === null || slot.total === null || slot.startsAt === null) return slot;
+    const at = new Date(slot.startsAt);
+    if (!Number.isFinite(at.getTime()) || !Number.isFinite(slot.total)) {
+      return { ...slot, total: null };
+    }
+    const quote = gridTariff.quote(at);
+    const tax = quote.energyTaxPerKwh ?? 0;
+    if (slot.currency !== quote.currency ||
+        !Number.isFinite(quote.transferPerKwh) || quote.transferPerKwh < 0 ||
+        !Number.isFinite(tax) || tax < 0) {
+      return { ...slot, total: null };
+    }
+    return { ...slot, total: slot.total + quote.transferPerKwh + tax };
+  };
+  return {
+    ...source,
+    current: adjust(source.current),
+    today: source.today.map((slot) => adjust(slot)!),
+    tomorrow: source.tomorrow.map((slot) => adjust(slot)!),
+  };
+}
+
 export function buildEnergyAdvice(
   response: PriceSchedule,
   now: Date = new Date(),
+  gridTariff: GridTariff | null = null,
 ): EnergyAdvice {
-  const allSlots = schedule(response);
+  const effective = variableDeliveredSchedule(response, gridTariff);
+  const allSlots = schedule(effective);
   const future = futureSlots(allSlots, now.getTime());
-  const current = currentPrice(response, allSlots, now.getTime());
+  const current = currentPrice(effective, allSlots, now.getTime());
   const minutes30 = cheapestWindow(future, 2);
   const minutes60 = cheapestWindow(future, 4);
   const minutes120 = cheapestWindow(future, 8);
