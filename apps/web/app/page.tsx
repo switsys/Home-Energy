@@ -1,4 +1,5 @@
 import { InteractivePriceCurve } from "./price-curve-chart";
+import { DeviceControlPanel } from "./device-control-panel";
 import { dashboardPeriodUrl, selectedConsumptionDays } from "./dashboard-period";
 
 type PriceSlot = Readonly<{
@@ -189,6 +190,27 @@ type PropertyGridPeaks = Readonly<{
   connections: readonly PropertyGridPeakConnection[];
 }>;
 
+type ConnectedDevice = Readonly<{
+  id: string;
+  scopeId: string;
+  source: string;
+  name: string;
+  room?: string | null;
+  type: string;
+  traits: readonly string[];
+  online?: boolean | null;
+  gridConnectionId: string | null;
+  nominalPowerKw: number | null;
+  state: { observedAt: string; values: Record<string, unknown> } | null;
+}>;
+
+type DeviceList = Readonly<{
+  gateway: string;
+  devices: readonly ConnectedDevice[];
+}>;
+
+type ControlStatus = Readonly<{ controlEnabled: boolean }>;
+
 type DashboardPageProps = Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>;
@@ -362,6 +384,19 @@ export default async function DashboardPage({
         </section>
       </main>
     );
+  }
+
+  let connectedDevices: readonly ConnectedDevice[] = [];
+  let controlEnabled = false;
+  try {
+    const [list, controls] = await Promise.all([
+      api<DeviceList>("/api/home/devices"),
+      api<ControlStatus>("/api/home/commands"),
+    ]);
+    connectedDevices = list.devices;
+    controlEnabled = controls.controlEnabled;
+  } catch {
+    // Device integration is optional; energy dashboard stays available.
   }
 
   const gridFeeConnections = stableGridFeeConnections(property);
@@ -904,6 +939,15 @@ export default async function DashboardPage({
             </div>
           </div>
         </section>
+
+        <DeviceControlPanel
+          devices={connectedDevices}
+          connections={property.gridConnections.map(connection => ({
+            id: connection.id,
+            name: connection.name,
+          }))}
+          controlEnabled={controlEnabled}
+        />
 
         <footer>
           <span>

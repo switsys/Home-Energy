@@ -1151,6 +1151,7 @@ describe("Home-Energy API", () => {
       apiKey: "secret",
       defaultHomeId: "home-1",
       deviceGateway,
+      controlKey: "control-secret",
     });
 
     const devices = await app.inject({
@@ -1179,12 +1180,14 @@ describe("Home-Energy API", () => {
       headers: {
         "content-type": "application/json",
         "x-home-energy-key": "secret",
+        "x-home-energy-control-key": "control-secret",
       },
       method: "POST",
       url: "/api/home/devices/plug-1/commands",
       payload: {
         trait: "on-off",
         command: "on",
+        confirmed: true,
       },
     });
     expect(command.statusCode).toBe(200);
