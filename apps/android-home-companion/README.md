@@ -58,6 +58,23 @@ store OAuth tokens or grant implicit device control. Credentials are
 encrypted using Android Keystore AES-GCM with Android backup disabled.
 The app does not follow HTTP redirects with the pairing key.
 
+## Install Google's separately downloaded Home APIs SDK
+
+The licensed Google Home SDK 1.11.1 ZIP contains a Maven repository for
+`play-services-home:17.1.0` and `play-services-home-types:17.1.0`.
+It is **not** supplied by Google's public Maven repository.
+
+Extract the archive to
+`~/.local/share/home-energy/google-home-maven` (the directory should
+contain `com/google/android/gms/play-services-home/17.1.0/`).
+The project now discovers that location automatically, or you can override
+it using `HOME_ENERGY_HOME_SDK_MAVEN=/absolute/path/to/extracted/repo`.
+
+Do not add the downloaded ZIP, the unpacked proprietary Android SDK, or
+any Google account credentials to the Git repository. The Android CI build
+will not succeed on an ordinary GitHub hosted runner until a licensed
+SDK is provided to the runner through a private authorized mechanism.
+
 ## Android build
 
 A build uses the same Google Play Home SDK version as the official sample:

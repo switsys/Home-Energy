@@ -6,3 +6,5 @@ dist/
 coverage/
 
 apps/web/.next/
+# Restricted Google Home APIs developer SDK: never commit.
+home.android.sdk_*.zip
