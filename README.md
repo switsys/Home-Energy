@@ -48,6 +48,25 @@ The dashboard reads the API key server-side and does not expose it to the browse
 
 The Tibber GraphQL `priceInfo.total` is the reported supplier electricity price including taxes. It does not automatically include all charges selected in the Tibber app's price widget. The dashboard defaults to this source price and provides a **+ Grid transfer** view when the corresponding modeled tariff quotes are available for every displayed interval. That view adds only the variable per-kWh grid-transfer tariff and explicitly excludes fixed fees, demand charges, and any other app-selected fees; it is an estimate, not a guaranteed reproduction of Tibber's app display or final invoice. The load planner continues to add the grid-transfer tariff only once, independently of the chart display option.
 
+## Tibber app-comparable delivered variable prices (Falu Elnät)
+
+For the configured falu-elnat-2026 tariff, the dashboard defaults to a modeled
+delivered variable price, calculated as the Tibber priceInfo.total plus Falu
+Elnät's separately invoiced 2026 energy tax (45 öre/kWh incl VAT) and grid
+transfer (11.25 öre/kWh incl VAT). The raw API price remains unchanged and
+is selectable on the chart.
+
+At 2026-10-23 18:30 in Europe/Stockholm, the observed 1.681 SEK/kWh API price
+plus 0.5625 SEK/kWh grid charges matches the user's Tibber screenshot
+(224 öre rounded). This matching is based on the actual screenshot and grid
+invoice components, NOT an assumption about all Swedish Tibber contracts.
+Tibber's general API docs describe its tax field as including Swedish energy
+tax; avoid blindly using these adjustments for another supplier or agreement.
+
+Advice and load planning use the same variable tariff model. Fixed monthly
+and peak-demand charges are handled separately per grid inlet and excluded
+from the displayed per-kWh value.
+
 ## Build and test
 
 ```bash

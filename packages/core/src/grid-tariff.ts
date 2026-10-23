@@ -6,6 +6,8 @@ export type GridTariffQuote = Readonly<{
   label: string;
   currency: string;
   transferPerKwh: number;
+  /** Separately billed state energy tax, VAT inclusive; never part of grid transfer. */
+  energyTaxPerKwh?: number;
   loadPeriod: GridLoadPeriod;
   season: GridSeason;
   demandRatePerKwMonth: number;
@@ -155,6 +157,7 @@ export const faluElnat2026: GridTariff = {
       label: this.label,
       currency: "SEK",
       transferPerKwh: 0.1125,
+      energyTaxPerKwh: 0.45,
       loadPeriod,
       season,
       demandRatePerKwMonth: loadPeriod === "high" ? 75 : 0,

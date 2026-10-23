@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { selectPriceCurveSlots, type PriceCurvePeriod } from "./price-curve-period";
-import { addGridTransferToPrices, type GridTransferSlot } from "./price-components";
+import { addDeliveredVariablePrices, type GridTransferSlot } from "./price-components";
 
 type PriceSlot = Readonly<{
   startsAt: string;
@@ -282,13 +282,13 @@ export function InteractivePriceCurve({
   loadPowerKw,
 }: InteractivePriceCurveProps) {
   const [period, setPeriod] = useState<PriceCurvePeriod>("today");
-  const [includeGridTransfer, setIncludeGridTransfer] = useState(false);
+  const [includeGridTransfer, setIncludeGridTransfer] = useState(true);
   const gridToday = useMemo(
-    () => addGridTransferToPrices(slots, gridTransferSlots),
+    () => addDeliveredVariablePrices(slots, gridTransferSlots),
     [slots, gridTransferSlots],
   );
   const gridTomorrow = useMemo(
-    () => addGridTransferToPrices(tomorrowSlots, tomorrowGridTransferSlots),
+    () => addDeliveredVariablePrices(tomorrowSlots, tomorrowGridTransferSlots),
     [tomorrowSlots, tomorrowGridTransferSlots],
   );
   const gridPriceAvailable = gridScheduleAvailable && gridToday !== null && gridTomorrow !== null;
@@ -306,7 +306,7 @@ export function InteractivePriceCurve({
       slot.currency === currentPrice.currency,
   ) ?? null;
   const displayCurrentPrice = showingGridTransfer && currentPrice && currentGridQuote
-    ? { ...currentPrice, total: currentPrice.total + currentGridQuote.transferPerKwh }
+    ? { ...currentPrice, total: currentPrice.total + currentGridQuote.transferPerKwh + (currentGridQuote.energyTaxPerKwh ?? 0) }
     : currentPrice;
   const visiblePeakRiskSlots = useMemo(
     () => selectPriceCurveSlots(peakRiskSlots, tomorrowPeakRiskSlots, period),
@@ -503,18 +503,18 @@ export function InteractivePriceCurve({
             <span className="label">PRICE COMPONENTS</span>
             <small>
               {showingGridTransfer
-                ? "Electricity + taxes + modeled variable grid transfer. Fixed, demand and other app-selected fees excluded."
+                ? "Estimated delivered variable price: Tibber + modeled grid transfer + separately billed energy tax. Fixed/demand charges excluded."
                 : "Tibber API electricity + taxes; grid transfer is separate."}
             </small>
           </div>
           <div className="load-window-options" role="group" aria-label="Price components">
             <button type="button" aria-pressed={!showingGridTransfer}
               className={!showingGridTransfer ? "load-window-active" : undefined}
-              onClick={() => setIncludeGridTransfer(false)}>Electricity</button>
+              onClick={() => setIncludeGridTransfer(false)}>Supplier</button>
             <button type="button" aria-pressed={showingGridTransfer}
               className={showingGridTransfer ? "load-window-active" : undefined}
               disabled={!gridPriceAvailable}
-              onClick={() => setIncludeGridTransfer(true)}>+ Grid transfer</button>
+              onClick={() => setIncludeGridTransfer(true)}>Incl. grid + tax</button>
           </div>
         </div>
         <div className="price-curve-stats">
@@ -990,7 +990,7 @@ export function InteractivePriceCurve({
                   {selectedIsElapsed
                     ? "Select a future slot for a complete load estimate"
                     : selectedEstimate
-                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · ${showingGridTransfer ? "incl. modeled grid transfer" : "electricity price only"}`
+                      ? `${loadPowerKw.toFixed(1)} kW × ${windowMinutes} min · ${selectedEstimate.energyKwh.toFixed(2)} kWh · ${showingGridTransfer ? "incl. modeled grid transfer and energy tax" : "supplier price only"}`
                       : `Not enough remaining slots for ${windowMinutes} min`}
                 </small>
               </div>
@@ -1029,7 +1029,7 @@ export function InteractivePriceCurve({
                     </strong>
                     <small>
                       Same {loadPowerKw.toFixed(1)} kW × {windowMinutes} min load,
-                      {showingGridTransfer ? "Including modeled grid transfer" : "Electricity price only"}. Drag the block to compare.
+                      {showingGridTransfer ? "Including modeled grid transfer and energy tax" : "Supplier price only"}. Drag the block to compare.
                     </small>
                   </>
                 ) : (

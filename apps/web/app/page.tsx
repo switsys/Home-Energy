@@ -20,6 +20,8 @@ type GridScheduleSlot = Readonly<{
   startsAt: string;
   currency: string;
   transferPerKwh: number;
+  energyTaxPerKwh: number;
+  variableGridPerKwh: number;
   loadPeriod: "low" | "high";
   season: "summer" | "winter";
   demandRatePerKwMonth: number;
@@ -116,6 +118,7 @@ type LoadPlanGridSummary = Readonly<{
   tariffId: string;
   label: string;
   transferCost: number;
+  energyTaxCost: number;
   highestDemandRatePerKwMonth: number;
   peakWindowMinutes: number;
   peakAveragingCount: number;
@@ -132,6 +135,7 @@ type LoadPlanWindow = Readonly<{
   averagePrice: number;
   energyPriceCost: number;
   gridTransferCost: number;
+  gridEnergyTaxCost: number;
   estimatedCost: number;
   comparisonCost: number;
   currency: string;
@@ -437,15 +441,15 @@ export default async function DashboardPage({
     gridSchedule?.today.filter(
       (slot) => slot.loadPeriod === "high" && slot.demandRatePerKwMonth > 0,
     ) ?? [];
-  const currentPrice = advice.current ?? prices.current;
+  const currentPrice = prices.current;
   const currentGridSlot = currentPrice === null || currentPrice.startsAt === null
     ? null
     : gridSchedule?.today.find((slot) =>
         Date.parse(slot.startsAt) === Date.parse(currentPrice.startsAt) &&
         slot.currency === currentPrice.currency,
       ) ?? null;
-  const withGridTransfer = currentPrice && currentGridSlot
-    ? currentPrice.total + currentGridSlot.transferPerKwh
+  const withDeliveredVariable = currentPrice && currentGridSlot
+    ? currentPrice.total + currentGridSlot.transferPerKwh + currentGridSlot.energyTaxPerKwh
     : null;
   const signal = signalText(advice.recommendation.action);
   const allPeaksInactive =
@@ -494,20 +498,23 @@ export default async function DashboardPage({
 
         <section className="hero-grid">
           <article className="card current-card">
-            <span className="label">CURRENT ENERGY PRICE</span>
+            <span className="label">{withDeliveredVariable !== null ? "ESTIMATED DELIVERED VARIABLE PRICE" : "CURRENT SUPPLIER PRICE"}</span>
             <div className="price">
               {advice.current
-                ? money(advice.current.total, advice.current.currency)
+                ? money(withDeliveredVariable ?? advice.current.total, advice.current.currency)
                 : "—"}
             </div>
             <span className="unit">per kWh</span>
-            <small>Tibber API price · electricity and taxes, excluding grid fees.</small>
-            {withGridTransfer !== null && currentPrice ? (
+            {withDeliveredVariable !== null && currentPrice && currentGridSlot ? (
               <small>
-                Including modeled grid transfer: {money(withGridTransfer, currentPrice.currency)}/kWh.
-                Fixed charges, demand fees and other app-selected fees are not included.
+                Tibber {money(currentPrice.total, currentPrice.currency)} +
+                grid transfer {money(currentGridSlot.transferPerKwh, currentPrice.currency)} +
+                grid energy tax {money(currentGridSlot.energyTaxPerKwh, currentPrice.currency)}/kWh.
+                Excludes fixed and demand charges; matches the selected Tibber app components approximately.
               </small>
-            ) : null}
+            ) : (
+              <small>Tibber API electricity price; grid components unavailable.</small>
+            )}
             {advice.current?.level ? (
               <span className="pill">
                 {advice.current.level.replaceAll("_", " ")}
@@ -577,7 +584,7 @@ export default async function DashboardPage({
         </section>
 
         <InteractivePriceCurve
-          currentPrice={advice.current ?? prices.current}
+          currentPrice={prices.current}
           currentStartsAt={
             advice.current?.startsAt ?? prices.current?.startsAt ?? null
           }
@@ -684,7 +691,12 @@ export default async function DashboardPage({
                       loadPlan.best.grid.transferCost,
                       loadPlan.best.currency,
                     )}{" "}
-                    grid transfer included · peak tariff up to{" "}
+                    transfer +{" "}
+                    {money(
+                      loadPlan.best.grid.energyTaxCost,
+                      loadPlan.best.currency,
+                    )}{" "}
+                    state energy tax included · peak tariff up to{" "}
                     {number(
                       loadPlan.best.grid.highestDemandRatePerKwMonth,
                       0,
