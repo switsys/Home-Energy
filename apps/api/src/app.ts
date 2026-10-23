@@ -24,8 +24,11 @@ import Fastify, {
 } from "fastify";
 
 const HOME_CACHE_MS = 60 * 60 * 1000;
-const PRICE_CACHE_MS = 24 * 60 * 60 * 1000;
-const PRICE_RETRY_CACHE_MS = 60 * 60 * 1000;
+// Tibber can revise preliminary Swedish prices after the first publication.
+// Keep a modest refresh cadence so the dashboard converges with Tibber's own app
+// without querying on every request.
+const PRICE_CACHE_MS = 60 * 60 * 1000;
+const PRICE_RETRY_CACHE_MS = 15 * 60 * 1000;
 
 type TimedCache<T> = Readonly<{ expiresAt: number; value: T }>;
 
