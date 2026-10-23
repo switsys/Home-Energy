@@ -128,7 +128,7 @@ termux-open ~/storage/downloads/Home-Energy-Companion-0.1.0-debug.apk
 ```
 
 The debug APK's SHA-256 is
-`ea9094cec4cc014b80d87dea412be74f33d4149f046e6a18669883f314f04b2c`.
+`b6f3920232e598ae0a23ea13ffd7cf1b767f1176dcf0a981df8e488b566f2b97`.
 
 **Not verified yet:** Android installation/runtime, Google OAuth setup,
 Google Home permission grants, live discovery, actual device execution.
