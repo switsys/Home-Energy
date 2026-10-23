@@ -17,6 +17,9 @@ import {
   type PriceSlot,
 } from "@home-energy/core";
 import { TibberProvider } from "@home-energy/tibber";
+import { DeviceBridge } from "./device-bridge.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -39,6 +42,9 @@ export type AppOptions = Readonly<{
   defaultHomeId?: string | null;
   gridTariff?: GridTariff | null;
   deviceGateway?: HomeDeviceGateway | null;
+  deviceBridge?: DeviceBridge | null;
+  bridgeKey?: string | null;
+  controlKey?: string | null;
   deviceProvider?: EnergyDeviceProvider | null;
   property?: EnergyProperty | null;
 }>;
@@ -160,14 +166,41 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     options.gridTariff === undefined
       ? resolveGridTariff(configured(process.env.HOME_ENERGY_GRID_TARIFF))
       : options.gridTariff;
-  const deviceGateway = options.deviceGateway ?? null;
-  const deviceProvider = options.deviceProvider ?? null;
+  const bridgeKey = configured(options.bridgeKey === undefined
+    ? process.env.HOME_ENERGY_DEVICE_BRIDGE_KEY : options.bridgeKey);
+  const controlKey = configured(options.controlKey === undefined
+    ? process.env.HOME_ENERGY_CONTROL_KEY : options.controlKey);
+  const deviceBridge = options.deviceBridge === undefined
+    ? bridgeKey ? new DeviceBridge(
+        configured(process.env.HOME_ENERGY_DEVICE_STATE_FILE) ??
+        join(homedir(), ".local", "share", "home-energy", "device-bridge.json"),
+        clock,
+      ) : null
+    : options.deviceBridge;
+  const deviceGateway = options.deviceGateway ?? deviceBridge ?? null;
+  const deviceProvider = options.deviceProvider ??
+    (deviceBridge === null ? null : {
+      id: deviceBridge.id,
+      devices: (propertyId: string) => deviceBridge.energyDevices(propertyId),
+    });
   const explicitProperty = options.property ?? null;
   const propertyId =
     configured(process.env.HOME_ENERGY_PROPERTY_ID) ?? "home";
   const propertyName =
     configured(process.env.HOME_ENERGY_PROPERTY_NAME) ?? "Home";
   const requireAccess = accessGuard(apiKey);
+  const requireBridge = async (request: FastifyRequest, reply: FastifyReply) => {
+    const candidate = request.headers["x-home-energy-bridge-key"];
+    if (bridgeKey === null || typeof candidate !== "string" ||
+        !secretEqual(candidate, bridgeKey)) {
+      return reply.status(401).send({ error: "bridge_unauthorized" });
+    }
+  };
+  const controlAuthorized = (request: FastifyRequest) => {
+    const candidate = request.headers["x-home-energy-control-key"];
+    return controlKey !== null && typeof candidate === "string" &&
+      secretEqual(candidate, controlKey);
+  };
 
   let homesCache: TimedCache<Awaited<ReturnType<EnergyProvider["homes"]>>> | null =
     null;
@@ -573,6 +606,71 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     },
   );
 
+  // Google Home's Android/iOS companion uses its own scoped bridge credential.
+  // Neither the dashboard nor the electricity provider receives that secret.
+  app.post<{ Body: { scopeId?: string; devices?: unknown[] } }>(
+    "/api/bridge/devices/sync", { preHandler: requireBridge },
+    async (request, reply) => {
+      if (!deviceBridge) return reply.status(503).send({ error: "bridge_disabled" });
+      try {
+        return deviceBridge.sync(request.body?.scopeId ?? "", request.body?.devices ?? []);
+      } catch (error) {
+        return reply.status(400).send({ error: error instanceof Error ? error.message : "invalid_snapshot" });
+      }
+    },
+  );
+
+  app.get<{ Querystring: { scopeId?: string } }>(
+    "/api/bridge/commands/claim", { preHandler: requireBridge },
+    async (request, reply) => {
+      if (!deviceBridge) return reply.status(503).send({ error: "bridge_disabled" });
+      try { return { command: deviceBridge.claim(request.query.scopeId ?? "") }; }
+      catch { return reply.status(400).send({ error: "invalid_scope" }); }
+    },
+  );
+
+  app.post<{ Params: { commandId: string }; Body: {
+    scopeId?: string; succeeded?: boolean; message?: string;
+  } }>(
+    "/api/bridge/commands/:commandId/ack", { preHandler: requireBridge },
+    async (request, reply) => {
+      if (!deviceBridge) return reply.status(503).send({ error: "bridge_disabled" });
+      if (typeof request.body?.succeeded !== "boolean")
+        return reply.status(400).send({ error: "invalid_ack" });
+      try {
+        return deviceBridge.ack(request.body.scopeId ?? "",
+          request.params.commandId, request.body.succeeded, request.body.message);
+      } catch {
+        return reply.status(409).send({ error: "command_not_claimed" });
+      }
+    },
+  );
+
+  app.get("/api/home/commands", { preHandler: requireAccess }, async () => ({
+    commands: deviceBridge?.commands() ?? [], controlEnabled: controlKey !== null,
+  }));
+
+  app.patch<{ Params: { deviceId: string }; Body: {
+    gridConnectionId?: string | null; nominalPowerKw?: number | null;
+    confirmed?: boolean;
+  } }>("/api/home/devices/:deviceId/config", { preHandler: requireAccess },
+    async (request, reply) => {
+      if (!deviceBridge || !controlAuthorized(request) || request.body?.confirmed !== true)
+        return reply.status(403).send({ error: "control_approval_required" });
+      const property = await energyProperty();
+      const connection = request.body.gridConnectionId ?? null;
+      if (connection !== null && !property.gridConnections.some(c => c.id === connection))
+        return reply.status(400).send({ error: "unknown_grid_connection" });
+      try {
+        const device = deviceBridge.configure(request.params.deviceId, connection,
+          request.body.nominalPowerKw ?? null);
+        return { device };
+      } catch (error) {
+        return reply.status(400).send({ error: error instanceof Error ? error.message : "invalid_device_config" });
+      }
+    },
+  );
+
   app.get(
     "/api/home/devices",
     { preHandler: requireAccess },
@@ -622,6 +720,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       trait?: string;
       command?: string;
       params?: Record<string, boolean | number | string | null>;
+      confirmed?: boolean;
     };
   }>(
     "/api/home/devices/:deviceId/commands",
@@ -633,12 +732,16 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         });
       }
 
+      if (!controlAuthorized(request) || request.body?.confirmed !== true) {
+        return reply.status(403).send({ error: "control_approval_required" });
+      }
       const trait = configured(request.body?.trait);
       const command = configured(request.body?.command);
-      if (trait === null || command === null) {
+      if (trait !== "on-off" || (command !== "on" && command !== "off") ||
+          request.body?.params !== undefined) {
         return reply.status(400).send({
-          error: "invalid_device_command",
-          message: "trait and command are required",
+          error: "unsupported_device_command",
+          message: "Only confirmed on/off commands are supported.",
         });
       }
 
@@ -678,6 +781,56 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     },
   );
 
+  async function planDevice(deviceId: string, minutes: number) {
+    if (deviceProvider === null) throw new Error("device_provider_not_configured");
+    const property = await energyProperty();
+    const devices = await deviceProvider.devices(property.id);
+    const device = devices.find((item) => item.id === deviceId);
+    if (device === undefined) throw new Error("device_not_found");
+
+    if (device.gridConnectionId === null) {
+      throw new Error("device_grid_connection_not_configured");
+    }
+
+    const connection = findGridConnection(
+      property,
+      device.gridConnectionId,
+    );
+    if (connection === null) {
+      throw new Error("device_grid_connection_not_found");
+    }
+
+    if (
+      device.nominalPowerKw === null ||
+      !Number.isFinite(device.nominalPowerKw) ||
+      device.nominalPowerKw <= 0
+    ) {
+      throw new Error("device_power_not_configured");
+    }
+
+    const homeId = connection.providerHomeId;
+    const peakReport = await peakReportForPlanning(homeId);
+    const plan = buildLoadPlan(
+      await prices(homeId),
+      {
+        durationMinutes: minutes,
+        powerKw: device.nominalPowerKw,
+      },
+      clock(),
+      gridTariff,
+      peakReport,
+    );
+
+    return {
+      provider: deviceProvider.id,
+      propertyId: property.id,
+      gridConnectionId: connection.id,
+      homeId,
+      plan,
+      automation: buildDeviceAutomationPreview(plan, device),
+    };
+  }
+
   app.post<{
     Body: { deviceId?: string; minutes?: number };
   }>(
@@ -706,65 +859,46 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       }
 
       try {
-        const property = await energyProperty();
-        const devices = await deviceProvider.devices(property.id);
-        const device = devices.find((item) => item.id === deviceId);
-        if (device === undefined) {
-          return reply.status(404).send({
-            error: "device_not_found",
-          });
-        }
-
-        if (device.gridConnectionId === null) {
-          return reply.status(409).send({
-            error: "device_grid_connection_not_configured",
-          });
-        }
-
-        const connection = findGridConnection(
-          property,
-          device.gridConnectionId,
-        );
-        if (connection === null) {
-          return reply.status(409).send({
-            error: "device_grid_connection_not_found",
-          });
-        }
-
-        if (
-          device.nominalPowerKw === null ||
-          !Number.isFinite(device.nominalPowerKw) ||
-          device.nominalPowerKw <= 0
-        ) {
-          return reply.status(409).send({
-            error: "device_power_not_configured",
-          });
-        }
-
-        const homeId = connection.providerHomeId;
-        const peakReport = await peakReportForPlanning(homeId);
-        const plan = buildLoadPlan(
-          await prices(homeId),
-          {
-            durationMinutes: minutes,
-            powerKw: device.nominalPowerKw,
-          },
-          clock(),
-          gridTariff,
-          peakReport,
-        );
-
-        return {
-          provider: deviceProvider.id,
-          propertyId: property.id,
-          gridConnectionId: connection.id,
-          homeId,
-          plan,
-          automation: buildDeviceAutomationPreview(plan, device),
-        };
+        return await planDevice(deviceId, minutes);
       } catch (error) {
         return unavailable(reply, error);
       }
+    },
+  );
+
+  app.post<{ Body: {
+    deviceId?: string; minutes?: number; confirmed?: boolean;
+  } }>(
+    "/api/energy/automation/approve", { preHandler: requireAccess },
+    async (request, reply) => {
+      if (!deviceBridge || !controlAuthorized(request) || request.body?.confirmed !== true)
+        return reply.status(403).send({ error: "control_approval_required" });
+      const deviceId = configured(request.body.deviceId);
+      const minutes = request.body.minutes ?? 120;
+      if (!deviceId || !Number.isInteger(minutes) || minutes < 15 || minutes > 24 * 60)
+        return reply.status(400).send({ error: "invalid_automation_parameters" });
+      try {
+        const planned = await planDevice(deviceId, minutes);
+        if (!planned.automation.controlAvailable)
+          return reply.status(409).send({ error: "device_not_controllable" });
+        const schedule = deviceBridge.schedule(deviceId,
+          planned.automation.startsAt, planned.automation.endsAt);
+        return reply.status(202).send({ automation: planned.automation, schedule });
+      } catch (error) {
+        return reply.status(409).send({
+          error: error instanceof Error ? error.message : "automation_failed",
+        });
+      }
+    },
+  );
+
+  app.post<{ Body: { automationId?: string; confirmed?: boolean } }>(
+    "/api/energy/automation/cancel", { preHandler: requireAccess },
+    async (request, reply) => {
+      if (!deviceBridge || !controlAuthorized(request) || request.body?.confirmed !== true)
+        return reply.status(403).send({ error: "control_approval_required" });
+      try { return deviceBridge.cancel(request.body.automationId ?? ""); }
+      catch { return reply.status(409).send({ error: "automation_not_cancellable" }); }
     },
   );
 
