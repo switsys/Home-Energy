@@ -98,11 +98,37 @@ and https://developers.home.google.com/apis/android/permissions
   receive commands. Later iterations can use native Google Home automations
   or a dedicated always-on controller before real unattended control.
 
-## Validation state
+## Verified debug build on sorskog (23 October 2026)
 
-The HTTPS relay, associated Node tests, and TypeScript routes are built/tested
-on sorskog. **Android compilation and on-device Google Home OAuth have not yet
-been completed**. The server has a Java runtime but not a complete JDK, and
-the first Gradle build was stopped to preserve the production dashboard.
-The APK must be compiled on Android Studio or an appropriately provisioned
-Android build runner before installation. No companion is paired today.
+The Google Home 1.11.1 developer ZIP was installed **privately** in
+`~/.local/share/home-energy/google-home-maven` and its checksums validated.
+The companion passed `:app:checkDebugAarMetadata`,
+`:app:compileDebugKotlin` and `:app:assembleDebug` with local Temurin JDK
+21.0.13 and Java/Kotlin bytecode target 17.
+
+Android application ID: `se.lierikes.homeenergy.companion`
+Minimum Android SDK: 29 (Android 10), target SDK: 36.
+The debug signing certificate SHA-1 for registering Android OAuth is
+`09:3A:6D:33:29:0F:9B:0C:1D:FF:35:1D:DD:09:DD:69:05:B2:66:81`.
+
+The **debug APK is not committed or publicly hosted**. Its private copy
+on sorskog is:
+
+`/home/admin/Home-Energy-Companion-0.1.0-debug.apk`
+
+Transfer with an authenticated SFTP client to your Android Downloads
+folder. From Termux with storage permission already enabled:
+
+```sh
+scp admin@sorskog.se:/home/admin/Home-Energy-Companion-0.1.0-debug.apk ~/storage/downloads/
+termux-open ~/storage/downloads/Home-Energy-Companion-0.1.0-debug.apk
+```
+
+The debug APK's SHA-256 is
+`ea9094cec4cc014b80d87dea412be74f33d4149f046e6a18669883f314f04b2c`.
+
+**Not verified yet:** Android installation/runtime, Google OAuth setup,
+Google Home permission grants, live discovery, actual device execution.
+Keep physical switching disabled until a permitted low-risk test device
+works and acknowledgement is observed. Do not use this foreground-only
+companion for unattended switching.
