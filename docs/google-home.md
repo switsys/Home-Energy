@@ -207,3 +207,18 @@ as configuration/state, but **never** commit it or the keys.
   autonomous home controller.
 - Supported Home APIs can be tested first using the [official Android
   sample app](https://developers.home.google.com/apis/android/sample-app/build).
+
+## Native Android companion prototype (PR following bridge v1)
+
+A minimal Kotlin Android companion now lives at
+[apps/android-home-companion](../apps/android-home-companion/README.md).
+It implements Google Home Permissions + read-only structure/room/device
+discovery and an explicit, foreground-only opt-in to approved OnOff commands.
+The public Next.js HTTPS transport is
+`/api/companion/devices/sync`, `/api/companion/commands/claim`, and
+`/api/companion/commands/:id/ack`. The mobile app sends only normalized
+metadata and state, never Google access tokens or passwords.
+
+Use [docs/devices.md](devices.md) for the actual device inventory. Existing
+Google Home structures remain separate at Google; Home-Energy groups them
+visually under one homestead and retains meter-specific accounting.
