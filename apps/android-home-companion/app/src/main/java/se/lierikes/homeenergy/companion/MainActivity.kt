@@ -13,6 +13,9 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -151,17 +154,43 @@ class MainActivity : ComponentActivity() {
                             val command = transport.claim(snapshot.scopeId)
                             if (command != null) {
                                 var succeeded = false
-                                var result = "Google Home execution failed"
+                                var result = "Command not executed"
                                 try {
-                                    home.perform(snapshot.scopeId, command)
-                                    succeeded = true
-                                    result = "Google Home SDK acknowledged " + command.command
-                                } catch (e: Exception) {
-                                    result = "Not executed: " + (e.message ?: e.javaClass.simpleName)
+                                    // Claim involves network I/O. Consent can change before it returns.
+                                    if (!isActive || !consentToCommands.isChecked) {
+                                        result = "Execution consent withdrawn"
+                                    } else if (command.automationId != null) {
+                                        result = "Scheduled control needs an always-on controller"
+                                    } else {
+                                        try {
+                                            home.perform(snapshot.scopeId, command)
+                                            succeeded = true
+                                            result = "Google Home SDK acknowledged " + command.command
+                                        } catch (e: CancellationException) {
+                                            result = "Command outcome unknown after app interruption"
+                                            throw e
+                                        } catch (e: Exception) {
+                                            result = "Not executed: " +
+                                                (e.message ?: e.javaClass.simpleName)
+                                        }
+                                    }
+                                } finally {
+                                    // onStop may cancel polling even *after* the device switched.
+                                    // Always attempt the ACK, including when cancellation occurs.
+                                    // There is no blind retry of the physical device command.
+                                    withContext(NonCancellable + Dispatchers.IO) {
+                                        runCatching {
+                                            transport.acknowledge(
+                                                snapshot.scopeId, command, succeeded, result,
+                                            )
+                                        }.onFailure {
+                                            // The bridge lease will fail. For a manual command,
+                                            // reconcile actual state in a later discovery sync.
+                                            result = "ACK unavailable; verify physical device state"
+                                        }
+                                    }
                                 }
-                                // A failed ACK does not trigger a retry. Bridge leases time out.
-                                transport.acknowledge(snapshot.scopeId, command, succeeded, result)
-                                status.text = result
+                                if (isActive) status.text = result
                             }
                         }
                     } catch (e: CancellationException) { throw e }
@@ -180,8 +209,8 @@ class MainActivity : ComponentActivity() {
             status.text = "Disconnected. No background device control."
         }
         label("Safety: This is a foreground-only test companion, NOT an unattended " +
-              "scheduler. A scheduled OFF may be missed if the phone is asleep or the app " +
-              "is closed. Test read-only discovery and a low-risk plug first.")
+              "scheduler. Timed automation is intentionally blocked. " +
+              "Test read-only discovery and a low-risk plug first.")
 
         deviceDetails = TextView(this).apply { textSize = 13f }
         column.addView(deviceDetails)

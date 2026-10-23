@@ -14,6 +14,7 @@ internal data class PendingCommand(
     val deviceId: String,
     val command: String,
     val expiresAt: String,
+    val automationId: String?,
 )
 
 /** Never follows redirects with the bridge credential or accepts arbitrary remote commands. */
@@ -90,6 +91,7 @@ internal class BridgeTransport(private val settings: CompanionSettings) {
         return PendingCommand(
             c.getString("id"), c.getString("deviceId"),
             c.getString("command"), c.getString("expiresAt"),
+            if (c.isNull("automationId")) null else c.getString("automationId"),
         )
     }
 

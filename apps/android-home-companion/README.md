@@ -37,7 +37,10 @@ Control is disabled by default on the server until a separate, strong
 HOME_ENERGY_CONTROL_KEY is configured. The phone must also have the
 **Allow execution** checkbox checked *while the app remains in the
 foreground*. Physical switching requires explicit approval in the dashboard
-and a companion-scope command lease. The phone never sends Google access
+and a companion-scope command lease. Consent is checked again **after** a
+command is claimed, and acknowledgement is attempted even when the app
+lifecycle cancels normal polling. Scheduled commands are always rejected
+by this phone companion because it cannot guarantee the scheduled OFF. The phone never sends Google access
 tokens to Home-Energy.
 
 The first adapter intentionally supports only OnOff lights, dimmable lights

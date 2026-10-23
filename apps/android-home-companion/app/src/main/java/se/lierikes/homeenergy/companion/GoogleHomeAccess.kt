@@ -121,6 +121,11 @@ internal class GoogleHomeAccess(context: Context) {
 
     /** Run only on a command leased by the bridge and approved through its dashboard. */
     suspend fun perform(scope: String, command: PendingCommand) {
+        // Scheduled OFF cannot be guaranteed by a foreground phone companion.
+        // Reject scheduled ON and OFF commands until an always-on controller exists.
+        require(command.automationId == null) {
+            "Timed automation is disabled on this foreground-only companion"
+        }
         require(scope == lastScope) { "Google Home structure changed" }
         require(Instant.now().isBefore(Instant.parse(command.expiresAt))) {
             "Expired command will not be executed"
