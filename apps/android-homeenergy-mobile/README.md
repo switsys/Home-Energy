@@ -95,3 +95,29 @@ be uploaded to GitHub or GitHub Actions. Local developer build:
 
 The public Android 12 install smoke test builds **standardDebug** only, with
 `:app:testStandardDebugUnitTest :app:assembleStandardDebug`.
+
+## Android installation and signing (Samsung Android 12)
+
+**Important:** Google Home-enabled v0.4 and the earlier GitHub Actions v0.3
+APK have the **same package ID** (`se.lierikes.homeenergy.mobile`) but
+were signed by **different debug signing certificates**. Android forbids
+upgrading between them. If v0.3 was installed, uninstall *Li-Erikes Energy*
+once before installing v0.4. This clears the old app's local settings but
+does not remove Google Home or eHomeLife/Refoss devices or their automations.
+
+Signing fingerprints:
+- Old v0.3 CI test artifact SHA-256 (certificate):
+  `38cc12345f8995dd64e11c48b87ce4a6c8626e77ad00e1c3b14beb7607fbcd76`
+- Google Home v0.4 sorskog test APK SHA-256 (certificate):
+  `fb2f0cb2868f9f0cf06ea2c6181377732b9429c5f920949a2ce395f607c12fdf`
+
+**Do not distribute the CI standard/fallback build as an update to the
+Google Home build.** GitHub runners generate different debug keys. Subsequent
+Google Home candidates must be signed consistently using the same controlled
+signing identity. Store signing credentials securely and outside Git; use an
+explicit, backed-up release keystore before publishing a production version.
+The private APK verification workflow checks the expected certificate.
+
+A successful emulator install verifies packaging, not Samsung-specific
+package installer behavior. If a fresh install still hangs, collect a device
+installer error before making another APK.
