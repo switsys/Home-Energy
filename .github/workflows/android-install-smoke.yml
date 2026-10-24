@@ -65,7 +65,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Home-Energy-Mobile-v0.2.0-Android12-verified
+          name: Li-Erikes-Energy-v0.2.1-Android12-verified
           path: apps/android-homeenergy-mobile/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
