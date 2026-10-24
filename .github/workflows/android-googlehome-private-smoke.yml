@@ -22,7 +22,7 @@ jobs:
       - name: Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Download private draft release candidate
+      - name: Download temporary Android test candidate
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -54,7 +54,16 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Li-Erikes-Energy-v0.4.0-GoogleHome-Android12-verified
+          name: Li-Erikes-Energy-v0.4.0-GoogleHome-Android12-launch-verified
           path: /tmp/ghome-apk/app-googleHome-debug.apk
           retention-days: 7
           if-no-files-found: error
+
+      - name: Preserve emulator screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Li-Erikes-Energy-v0.4.0-Android12-screenshots
+          path: /tmp/homeenergy-*.png
+          if-no-files-found: warn
+          retention-days: 7
