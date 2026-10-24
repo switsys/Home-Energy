@@ -199,7 +199,7 @@ public final class MainActivity extends ComponentActivity {
         root.addView(statusView);
         setContentView(root);
 
-        Log.i(TAG, "APP_READY_V040");
+        Log.i(TAG, "APP_READY_V050");
         setStatus("Loading Home-Energy dashboard…");
         if (savedInstanceState != null && webView.restoreState(savedInstanceState) != null) {
             return;
@@ -224,10 +224,9 @@ public final class MainActivity extends ComponentActivity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(padding * 2, padding, padding * 2, padding * 2);
         panel.addView(textLine("Google Home devices", 21, padding));
-        panel.addView(textLine("Use the devices already connected via Google Home / eHomeLife. " +
-            "No device IP addresses and no bridge pairing key. This preview only reads " +
-            "device names, rooms, connectivity and supported on/off status. " +
-            "Existing automations remain unchanged.", 14, padding));
+        panel.addView(textLine("Your existing Google Home and eHomeLife plugs remain paired " +
+            "and controlled in Google Home. Tap the controls below; no device IP addresses, " +
+            "re-pairing or bridge key required. Existing automations remain unchanged.", 14, padding));
 
         googleStatus = textLine("Not connected.", 14, padding);
         panel.addView(googleStatus);
@@ -252,12 +251,17 @@ public final class MainActivity extends ComponentActivity {
         panel.addView(discover);
 
         if (googleHomeIntegration == null || !googleHomeIntegration.isSupported()) {
-            authorize.setEnabled(false);
-            discover.setEnabled(false);
-            googleStatus.setText("This test build has no Google SDK. " +
-                "Install the Google Home-enabled build for authorization and discovery.");
+            // A small stable installer must never present nonfunctional OAuth actions.
+            authorize.setVisibility(View.GONE);
+            discover.setVisibility(View.GONE);
+            googleStatus.setText("Your existing Google Home setup works as before. " +
+                "Use Open existing Google Home controls below; no IP addresses or re-pairing.");
         }
-        googleDeviceList = textLine("Devices will appear here after consent.", 14, padding);
+        googleDeviceList = textLine(
+            googleHomeIntegration != null && googleHomeIntegration.isSupported()
+                ? "Devices will appear here after consent."
+                : "Embedded device discovery is not available in this lightweight build.",
+            14, padding);
         panel.addView(googleDeviceList);
 
         Button openGoogleHome = new Button(this);

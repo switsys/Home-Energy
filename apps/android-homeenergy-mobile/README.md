@@ -121,3 +121,18 @@ The private APK verification workflow checks the expected certificate.
 A successful emulator install verifies packaging, not Samsung-specific
 package installer behavior. If a fresh install still hangs, collect a device
 installer error before making another APK.
+
+
+## v0.5 Samsung stable-install candidate
+The `standardRelease` variant excludes the proprietary Google Home SDK
+to keep the APK much smaller and avoid its optional dependencies in the Android
+package installer. The same Home-Energy dashboard is present and the Devices
+screen launches the owner's already configured Google Home controls. This
+version does **not** claim to import or control eHomeLife/Meross devices inside
+Home-Energy; native Google Home authorization is a separate future milestone.
+
+The APK must be signed with a persistent private release certificate (not an
+ephemeral CI debug key) and verified with `apksigner`. It must install cleanly
+on Android 12 and launch with `APP_READY_V050`. Only upload the signed APK,
+never the key or keystore. A package-installer test on an actual Samsung is
+still required before claiming Samsung compatibility.
