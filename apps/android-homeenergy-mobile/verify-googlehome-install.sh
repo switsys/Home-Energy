@@ -59,8 +59,8 @@ PY
   adb exec-out screencap -p > /tmp/homeenergy-devices.png
   if adb shell uiautomator dump /sdcard/homeenergy-devices.xml >/dev/null 2>&1 \
     && adb pull /sdcard/homeenergy-devices.xml /tmp/homeenergy-devices.xml >/dev/null 2>&1; then
-    grep -q 'Connect Google Home' /tmp/homeenergy-devices.xml
-    grep -q 'Open existing Google Home controls' /tmp/homeenergy-devices.xml
+    grep -qi 'Connect Google Home' /tmp/homeenergy-devices.xml
+    grep -qi 'Open existing Google Home controls' /tmp/homeenergy-devices.xml
     echo 'Device screen text: VERIFIED'
   else
     echo 'Device screen text: NOT VERIFIED (emulator UI inspector unavailable)'
