@@ -60,3 +60,37 @@ a stable private release signing key. Do not commit signing keys to GitHub.
 
 This app deliberately does not include Google's proprietary Home APIs SDK.
 Home-Energy services running on sorskog are unchanged.
+
+
+## v0.4 (unified Google Home preview)
+
+**One application ID:** `se.lierikes.homeenergy.mobile`; two **build variants**, not
+separate Android apps. Uninstalling or using a variant requires identical signing
+certificates for in-place upgrade. The `standard` public CI build still provides the
+Tibber dashboard and Advanced Refoss LAN fallback, without Google's SDK.
+The private `googleHome` variant adds a **Google Home Devices** page in that exact
+same installed application. Both flavors use the same launcher label/icon.
+
+- Tap **Devices → Connect Google Home** to authorize the home/structure;
+  **Discover devices** to read back Google Home names, rooms, online and on/off states.
+- Device types include **FanDevice**, because an eHomeLife/Meross smart outlet may
+  appear to Google Home as a fan (Vplug1 in Office was observed that way).
+- This is **read-only** until permission, live device discovery and actual capabilities
+  have been validated on the owner's phone. No switching, automation edits, or
+  credentials forwarded to the Home-Energy server.
+- No manual LAN IP or legacy bridge key is required for Google discovery.
+- A Google Cloud **Android OAuth client** is still required: register the exact
+  `se.lierikes.homeenergy.mobile` application ID, **private build certificate SHA-1**,
+  and the Google Home account as a test user. This is an SDK platform requirement;
+  it does not move hosting away from sorskog.
+
+The proprietary Google Home SDK stays under
+`~/.local/share/home-energy/google-home-maven` on sorskog. It must **not**
+be uploaded to GitHub or GitHub Actions. Local developer build:
+
+```sh
+./gradlew :app:assembleGoogleHomeDebug
+```
+
+The public Android 12 install smoke test builds **standardDebug** only, with
+`:app:testStandardDebugUnitTest :app:assembleStandardDebug`.
