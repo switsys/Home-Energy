@@ -208,7 +208,7 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(padding * 2, padding, padding, padding * 2, padding * 2);
+        panel.setPadding(padding * 2, padding, padding * 2, padding * 2);
         panel.addView(textLine("Refoss MSS210 · local Wi-Fi", 21, padding));
         panel.addView(textLine(
             "Read-only plug status. Your phone must be on the same Wi-Fi as the plugs. " +
