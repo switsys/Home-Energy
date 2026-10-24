@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <queries>
+        <package android:name="com.google.android.apps.chromecast.app" />
+    </queries>
 
     <!-- MSS210 requires local HTTP; only RFC1918 IPs are accepted by native code. -->
     <application
