@@ -260,6 +260,19 @@ public final class MainActivity extends ComponentActivity {
         googleDeviceList = textLine("Devices will appear here after consent.", 14, padding);
         panel.addView(googleDeviceList);
 
+        Button openGoogleHome = new Button(this);
+        openGoogleHome.setText("Open existing Google Home controls");
+        openGoogleHome.setOnClickListener(v -> {
+            Intent launch = getPackageManager()
+                .getLaunchIntentForPackage("com.google.android.apps.chromecast.app");
+            if (launch != null) {
+                startActivity(launch);
+            } else {
+                googleStatus.setText("The Google Home app is not available.");
+            }
+        });
+        panel.addView(openGoogleHome);
+
         Button advanced = new Button(this);
         advanced.setText("Advanced: local Refoss setup");
         advanced.setOnClickListener(v -> showRefoss());
