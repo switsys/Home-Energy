@@ -4,7 +4,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Home-Energy"
+        android:label="Li-Erikes Energy"
         android:icon="@drawable/ic_launcher"
         android:usesCleartextTraffic="false"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
