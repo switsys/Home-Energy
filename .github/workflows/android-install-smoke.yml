@@ -1,9 +1,8 @@
-name: Android install and launch smoke test
+name: Li-Erikes Energy Android 12 installation test
 
 on:
   pull_request:
     paths:
-      - "apps/android-install-smoke/**"
       - "apps/android-homeenergy-mobile/**"
       - ".github/workflows/android-install-smoke.yml"
   workflow_dispatch:
@@ -36,9 +35,8 @@ jobs:
 
       - name: Build minimal and mobile APKs
         run: |
-          gradle -p apps/android-install-smoke :app:assembleDebug --no-daemon --max-workers=2
-          gradle -p apps/android-homeenergy-mobile :app:assembleDebug --no-daemon --max-workers=2
-          for apk in apps/android-install-smoke/app/build/outputs/apk/debug/app-debug.apk apps/android-homeenergy-mobile/app/build/outputs/apk/debug/app-debug.apk; do
+          gradle -p apps/android-homeenergy-mobile :app:testDebugUnitTest :app:assembleDebug --no-daemon --max-workers=2
+          for apk in apps/android-homeenergy-mobile/app/build/outputs/apk/debug/app-debug.apk; do
             test -s "$apk"
             sha256sum "$apk"
             "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose "$apk"
@@ -50,7 +48,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Install, launch and uninstall both APKs on Android 12
+      - name: Install, launch and uninstall Li-Erikes Energy on Android 12
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 31
@@ -58,23 +56,14 @@ jobs:
           arch: x86_64
           profile: pixel_4
           script: |
-            bash apps/android-install-smoke/verify-install.sh
             bash apps/android-homeenergy-mobile/verify-install.sh
 
       - name: Preserve tested mobile APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Li-Erikes-Energy-v0.2.1-Android12-verified
+          name: Li-Erikes-Energy-v0.3.0-Android12-verified
           path: apps/android-homeenergy-mobile/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
 
-      - name: Preserve minimal smoke test APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Home-Energy-Install-Test-0.1.1-Android12-verified
-          path: apps/android-install-smoke/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 7
