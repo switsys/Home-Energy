@@ -282,12 +282,12 @@ public final class MainActivity extends ComponentActivity {
                 googleStatus.setText(message);
                 StringBuilder text = new StringBuilder();
                 for (HomeIntegration.Device d : devices) {
-                    text.append(d.name).append(" · ").append(d.room).append("\\n");
+                    text.append(d.name).append(" · ").append(d.room).append("\n");
                     text.append(d.type).append(" · ");
                     text.append(d.online ? "online" : "offline").append(" · ");
                     text.append(d.isOn == null ? "state unknown" : d.isOn ? "ON" : "OFF");
                     if (d.supportsOnOff) text.append(" · switch capable");
-                    text.append("\\n\\n");
+                    text.append("\n\n");
                 }
                 googleDeviceList.setText(text.length() == 0 ? "No devices available." : text.toString());
             });
