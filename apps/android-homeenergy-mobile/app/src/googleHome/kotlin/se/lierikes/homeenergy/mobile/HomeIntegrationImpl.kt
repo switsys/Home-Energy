@@ -58,13 +58,22 @@ class HomeIntegrationImpl(private val activity: ComponentActivity) : HomeIntegra
         activity.lifecycleScope.launch {
             try {
                 val result = client.requestPermissions(ForcePermissionFlow.FORCE_LAUNCH)
-                if (result.status == PermissionsResultStatus.SUCCESS) {
-                    callback.complete("Google Home access granted. Tap Discover devices.",
-                        emptyList())
-                } else {
-                    callback.complete(
-                        "Google Home authorization: ${result.status}. " +
-                        "Check the Android OAuth client, test user and selected home.",
+                val explanation = result.errorMessage
+                    ?.take(240)?.takeIf { it.isNotBlank() }
+                when (result.status) {
+                    PermissionsResultStatus.SUCCESS -> callback.complete(
+                        "Google Home access granted. Tap Discover devices.", emptyList(),
+                    )
+                    PermissionsResultStatus.CANCELLED -> callback.complete(
+                        "Google Home permission dialog was cancelled or interrupted." +
+                            (if (explanation != null) " Details: $explanation" else
+                                " If it closes immediately, check Android OAuth registration."),
+                        emptyList(),
+                    )
+                    else -> callback.complete(
+                        "Google Home authorization failed: ${result.status}." +
+                            (if (explanation != null) " Details: $explanation" else
+                                " Check Android OAuth client and test-user access."),
                         emptyList(),
                     )
                 }
