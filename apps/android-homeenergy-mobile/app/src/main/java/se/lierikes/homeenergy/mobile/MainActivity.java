@@ -19,6 +19,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.app.AlertDialog;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ScrollView;
@@ -32,7 +33,8 @@ import android.widget.TextView;
 
 /**
  * A lightweight, permission-minimal Home-Energy Android shell.
- * One installed app. Optional Google Home discovery; no device commands or background switching.
+ * One installed app. Optional Google Home permission, discovery and
+ * user-confirmed on/off. No scheduled or background switching.
  */
 public final class MainActivity extends ComponentActivity {
     private static final String TAG = "HomeEnergyMobile";
@@ -45,7 +47,8 @@ public final class MainActivity extends ComponentActivity {
     private ScrollView devicesPanel;
     private HomeIntegration googleHomeIntegration;
     private TextView googleStatus;
-    private TextView googleDeviceList;
+    private LinearLayout googleDeviceList;
+    private boolean googleControlInFlight;
     private RefossSecrets refossSecrets;
     private EditText refossIps;
     private EditText refossKey;
@@ -199,7 +202,7 @@ public final class MainActivity extends ComponentActivity {
         root.addView(statusView);
         setContentView(root);
 
-        Log.i(TAG, "APP_READY_V050");
+        Log.i(TAG, "APP_READY_V070");
         setStatus("Loading Home-Energy dashboard…");
         if (savedInstanceState != null && webView.restoreState(savedInstanceState) != null) {
             return;
@@ -257,11 +260,13 @@ public final class MainActivity extends ComponentActivity {
             googleStatus.setText("Your existing Google Home setup works as before. " +
                 "Use Open existing Google Home controls below; no IP addresses or re-pairing.");
         }
-        googleDeviceList = textLine(
+        googleDeviceList = new LinearLayout(this);
+        googleDeviceList.setOrientation(LinearLayout.VERTICAL);
+        googleDeviceList.addView(textLine(
             googleHomeIntegration != null && googleHomeIntegration.isSupported()
                 ? "Devices will appear here after consent."
-                : "Embedded device discovery is not available in this lightweight build.",
-            14, padding);
+                : "Embedded device discovery is not available in this build.",
+            14, padding));
         panel.addView(googleDeviceList);
 
         Button openGoogleHome = new Button(this);
@@ -293,22 +298,84 @@ public final class MainActivity extends ComponentActivity {
             googleStatus.setText("Google Home is not available in this build.");
             return;
         }
+        if (googleControlInFlight) return;
         googleStatus.setText("Reading devices from Google Home…");
         googleHomeIntegration.readDevices((message, devices) -> {
             runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
                 googleStatus.setText(message);
-                StringBuilder text = new StringBuilder();
-                for (HomeIntegration.Device d : devices) {
-                    text.append(d.name).append(" · ").append(d.room).append("\n");
-                    text.append(d.type).append(" · ");
-                    text.append(d.online ? "online" : "offline").append(" · ");
-                    text.append(d.isOn == null ? "state unknown" : d.isOn ? "ON" : "OFF");
-                    if (d.supportsOnOff) text.append(" · switch capable");
-                    text.append("\n\n");
-                }
-                googleDeviceList.setText(text.length() == 0 ? "No devices available." : text.toString());
+                renderGoogleDevices(devices);
             });
         });
+    }
+
+    private void renderGoogleDevices(List<HomeIntegration.Device> devices) {
+        googleDeviceList.removeAllViews();
+        if (devices.isEmpty()) {
+            googleDeviceList.addView(textLine(
+                "No devices available. Check Google Home permissions or tap Discover.",
+                14, 12));
+            return;
+        }
+        for (HomeIntegration.Device d : devices) {
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(12, 12, 12, 12);
+            card.setBackgroundColor(Color.rgb(22, 60, 51));
+            String state = d.isOn == null ? "status unavailable" :
+                d.isOn ? "ON" : "OFF";
+            String detail = d.name + " · " + d.room + "\n" + d.type + " · " +
+                (d.online ? "online" : "offline") + " · " + state;
+            card.addView(textLine(detail, 15, 8));
+
+            if (d.isControllable()) {
+                LinearLayout actions = new LinearLayout(this);
+                actions.setOrientation(LinearLayout.HORIZONTAL);
+                Button turnOn = new Button(this);
+                turnOn.setText("Turn ON");
+                turnOn.setEnabled(!Boolean.TRUE.equals(d.isOn));
+                turnOn.setOnClickListener(v -> confirmGooglePower(d, true));
+                actions.addView(turnOn, new LinearLayout.LayoutParams(0, -2, 1f));
+                Button turnOff = new Button(this);
+                turnOff.setText("Turn OFF");
+                turnOff.setEnabled(!Boolean.FALSE.equals(d.isOn));
+                turnOff.setOnClickListener(v -> confirmGooglePower(d, false));
+                actions.addView(turnOff, new LinearLayout.LayoutParams(0, -2, 1f));
+                card.addView(actions);
+            } else {
+                card.addView(textLine("Read-only · no supported power controls",
+                    12, 6));
+            }
+            googleDeviceList.addView(card);
+        }
+    }
+
+    private void confirmGooglePower(HomeIntegration.Device d, boolean turnOn) {
+        if (googleControlInFlight || googleHomeIntegration == null ||
+            !d.isControllable()) return;
+        final String verb = turnOn ? "Turn ON" : "Turn OFF";
+        new AlertDialog.Builder(this)
+            .setTitle(verb + " " + d.name + "?")
+            .setMessage("Send this command to " + d.room +
+                " through your authorized Google Home? " +
+                "Existing automations will not be edited.")
+            .setNegativeButton("Cancel", (dialog, which) -> {})
+            .setPositiveButton(verb, (dialog, which) -> {
+                if (googleControlInFlight) return;
+                googleControlInFlight = true;
+                googleStatus.setText("Sending " + verb + " to Google Home…");
+                googleHomeIntegration.setDevicePower(d.id, turnOn, (message, ignored) ->
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) return;
+                        googleControlInFlight = false;
+                        googleStatus.setText(message);
+                        if (message.startsWith("Google Home accepted ")) {
+                            // Never guess new physical state: query the SDK again.
+                            discoverGoogleHome();
+                        }
+                    }));
+            })
+            .show();
     }
 
     private void showDevices() {
@@ -316,7 +383,7 @@ public final class MainActivity extends ComponentActivity {
         if (webView != null) webView.setVisibility(View.GONE);
         if (devicesPanel != null) devicesPanel.setVisibility(View.VISIBLE);
         progressBar.setVisibility(View.GONE);
-        setStatus("Google Home devices · read only");
+        setStatus("Google Home devices · controls require consent and confirmation");
     }
 
     private ScrollView buildRefossPanel(int padding) {

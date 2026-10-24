@@ -62,7 +62,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Li-Erikes-Energy-v0.5.0-standard-fallback-Android12-verified
+          name: Li-Erikes-Energy-v0.7.0-standard-fallback-Android12-verified
           path: apps/android-homeenergy-mobile/app/build/outputs/apk/standard/debug/app-standard-debug.apk
           if-no-files-found: error
           retention-days: 7

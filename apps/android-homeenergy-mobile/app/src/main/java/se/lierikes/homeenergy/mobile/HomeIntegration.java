@@ -26,6 +26,11 @@ public interface HomeIntegration {
             this.isOn = isOn;
             this.supportsOnOff = supportsOnOff;
         }
+
+        /** Never allow commands on devices offline or without both power commands. */
+        public boolean isControllable() {
+            return online && supportsOnOff && id != null && !id.isEmpty();
+        }
     }
     interface Callback {
         void complete(String message, List<Device> devices);
@@ -33,4 +38,7 @@ public interface HomeIntegration {
     boolean isSupported();
     void requestPermission(Callback callback);
     void readDevices(Callback callback);
+
+    /** Explicit user-initiated on/off; no background device changes. */
+    void setDevicePower(String qualifiedDeviceId, boolean turnOn, Callback callback);
 }

@@ -11,8 +11,8 @@ android {
         applicationId = "se.lierikes.homeenergy.mobile"
         minSdk = 29
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.5.0"
+        versionCode = 8
+        versionName = "0.7.0"
     }
     flavorDimensions += "integration"
     productFlavors {

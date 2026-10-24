@@ -104,6 +104,56 @@ class HomeIntegrationImpl(private val activity: ComponentActivity) : HomeIntegra
         else -> "Other"
     }
 
+    /**
+     * This is deliberately not exposed to background callers. The UI confirms
+     * an individual action before invoking this, then the SDK re-reads the
+     * permitted structure and verifies the device supports the exact command.
+     */
+    override fun setDevicePower(
+        qualifiedDeviceId: String,
+        turnOn: Boolean,
+        callback: HomeIntegration.Callback,
+    ) {
+        activity.lifecycleScope.launch {
+            try {
+                val permission = client.hasPermissions().first {
+                    it != PermissionsState.PERMISSIONS_STATE_UNINITIALIZED
+                }
+                if (permission != PermissionsState.GRANTED) {
+                    callback.complete("Google Home permission required.", emptyList())
+                    return@launch
+                }
+                val structure = client.structures().list().firstOrNull {
+                    qualifiedDeviceId.startsWith(it.id.id + ":")
+                } ?: error("The selected Google Home is no longer authorized")
+                val device = structure.devices().list().firstOrNull {
+                    qualifiedDeviceId == structure.id.id + ":" + it.id.id
+                } ?: error("Device was removed from the permitted Google Home")
+                val connected = device.sourceConnectivity.connectivityState.let {
+                    it == ConnectivityState.ONLINE ||
+                        it == ConnectivityState.PARTIALLY_ONLINE
+                }
+                if (!connected) error("Device is offline")
+                val trait = onOff(device) ?: error("Device has no supported power trait")
+                val requiredCommand = if (turnOn) OnOff.Command.On else OnOff.Command.Off
+                if (!trait.supports(requiredCommand)) {
+                    error("This device does not support the selected command")
+                }
+                if (turnOn) trait.on() else trait.off()
+                callback.complete(
+                    "Google Home accepted " + (if (turnOn) "ON" else "OFF") +
+                        " for " + device.name + ". Refreshing status...",
+                    emptyList(),
+                )
+            } catch (e: Exception) {
+                callback.complete(
+                    "No change confirmed: " + e.javaClass.simpleName + ": " +
+                        (e.message ?: "Google Home command failed"), emptyList(),
+                )
+            }
+        }
+    }
+
     override fun readDevices(callback: HomeIntegration.Callback) {
         activity.lifecycleScope.launch {
             try {

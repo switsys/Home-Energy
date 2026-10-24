@@ -13,4 +13,7 @@ public final class HomeIntegrationImpl implements HomeIntegration {
     @Override public void readDevices(Callback callback) {
         callback.complete("Install the Google Home-enabled build to discover devices.", Collections.emptyList());
     }
+    @Override public void setDevicePower(String id, boolean turnOn, Callback callback) {
+        callback.complete("No device controls: Google Home SDK is not installed.", Collections.emptyList());
+    }
 }
