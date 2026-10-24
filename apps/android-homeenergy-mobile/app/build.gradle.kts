@@ -10,8 +10,8 @@ android {
         applicationId = "se.lierikes.homeenergy.mobile"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.3.0"
     }
 
     compileOptions {
@@ -20,5 +20,9 @@ android {
     }
 }
 
-// Keep this installable, low-risk wrapper independent of the proprietary
-// Google Home SDK. Device control remains in the server's approval-gated bridge.
+// Single Android app: HTTPS dashboard and read-only local Refoss MSS210 status.
+// No Google Home SDK, no Companion dependency and no physical switching.
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}
