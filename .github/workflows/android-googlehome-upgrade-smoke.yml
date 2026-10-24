@@ -1,6 +1,10 @@
 name: Li-Erikes Energy Google Home v0.7 upgrade test
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/android-googlehome-upgrade-smoke.yml'
+      - 'apps/android-homeenergy-mobile/verify-googlehome-upgrade.sh'
   workflow_dispatch:
 
 permissions:
