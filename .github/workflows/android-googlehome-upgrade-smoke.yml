@@ -63,5 +63,6 @@ jobs:
           path: |
             /tmp/home-energy-upgrade/launch-log.txt
             /tmp/home-energy-upgrade/v07-launch.png
+            /tmp/home-energy-upgrade/v07-devices.png
           if-no-files-found: warn
           retention-days: 7
