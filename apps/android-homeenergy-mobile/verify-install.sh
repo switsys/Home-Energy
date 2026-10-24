@@ -10,6 +10,8 @@ echo "Checking manifest permissions and launcher"
 badging="$("${ANDROID_HOME}/build-tools/35.0.0/aapt" dump badging "$apk")"
 grep -q "^package: name='$package'" <<< "$badging"
 grep -q "launchable-activity: name='$package.MainActivity'" <<< "$badging"
+grep -Fq "application-label:'Li-Erikes Energy'" <<< "$badging"
+grep -Fq "versionName='0.2.1'" <<< "$badging"
 permissions="$("${ANDROID_HOME}/build-tools/35.0.0/aapt" dump permissions "$apk")"
 grep -q 'android.permission.INTERNET' <<< "$permissions"
 if grep -qE 'android.permission.(CAMERA|RECORD_AUDIO|READ_CONTACTS|WRITE_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|READ_SMS)' <<< "$permissions"; then
@@ -19,10 +21,10 @@ fi
 
 adb shell getprop ro.build.version.sdk
 adb logcat -c
-echo "Installing Home-Energy v0.2.0"
+echo "Installing Home-Energy v0.2.1"
 adb install -r "$apk"
 adb shell pm path "$package" | grep -q 'package:'
-echo "Launching Home-Energy"
+echo "Launching Li-Erikes Energy"
 adb shell am start -W -n "$component"
 sleep 5
 pid="$(adb shell pidof "$package" | tr -d '\r')"
@@ -36,7 +38,7 @@ adb logcat -d -s HomeEnergyMobile:I '*:S' | grep -q 'APP_READY_V020' || {
     adb logcat -d -s HomeEnergyMobile:I '*:S' | tail -25 || true
     exit 1
 }
-echo "PASS: Installed and launched Home-Energy v0.2.0 on Android 12 (PID $pid)"
+echo "PASS: Installed and launched Home-Energy v0.2.1 on Android 12 (PID $pid)"
 adb shell am force-stop "$package"
 adb uninstall "$package"
 echo "PASS: Removed test APK cleanly"
