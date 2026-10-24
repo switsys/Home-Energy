@@ -35,8 +35,8 @@ jobs:
 
       - name: Build minimal and mobile APKs
         run: |
-          gradle -p apps/android-homeenergy-mobile :app:testDebugUnitTest :app:assembleDebug --no-daemon --max-workers=2
-          for apk in apps/android-homeenergy-mobile/app/build/outputs/apk/debug/app-debug.apk; do
+          gradle -p apps/android-homeenergy-mobile :app:testStandardDebugUnitTest :app:assembleStandardDebug --no-daemon --max-workers=2
+          for apk in apps/android-homeenergy-mobile/app/build/outputs/apk/standard/debug/app-standard-debug.apk; do
             test -s "$apk"
             sha256sum "$apk"
             "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose "$apk"
@@ -58,12 +58,12 @@ jobs:
           script: |
             bash apps/android-homeenergy-mobile/verify-install.sh
 
-      - name: Preserve tested mobile APK
+      - name: Preserve standard fallback APK (no licensed Google SDK)
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Li-Erikes-Energy-v0.3.0-Android12-verified
-          path: apps/android-homeenergy-mobile/app/build/outputs/apk/debug/app-debug.apk
+          name: Li-Erikes-Energy-v0.4.0-standard-fallback-Android12-verified
+          path: apps/android-homeenergy-mobile/app/build/outputs/apk/standard/debug/app-standard-debug.apk
           if-no-files-found: error
           retention-days: 7
 
