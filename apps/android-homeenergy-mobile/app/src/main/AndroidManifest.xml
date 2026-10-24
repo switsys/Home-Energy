@@ -2,11 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- MSS210 requires local HTTP; only RFC1918 IPs are accepted by native code. -->
     <application
         android:allowBackup="false"
         android:label="Li-Erikes Energy"
         android:icon="@drawable/ic_launcher"
-        android:usesCleartextTraffic="false"
+        android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".MainActivity"
