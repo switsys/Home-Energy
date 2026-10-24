@@ -1,6 +1,6 @@
 package se.lierikes.homeenergy.mobile;
 
-import android.app.Activity;
+import androidx.activity.ComponentActivity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
@@ -32,9 +32,9 @@ import android.widget.TextView;
 
 /**
  * A lightweight, permission-minimal Home-Energy Android shell.
- * No Google Home SDK, no device commands, no background operation.
+ * One installed app. Optional Google Home discovery; no device commands or background switching.
  */
-public final class MainActivity extends Activity {
+public final class MainActivity extends ComponentActivity {
     private static final String TAG = "HomeEnergyMobile";
     private static final String DASHBOARD = "https://energy.li-erikes.se/";
     private static final String TRUSTED_HOST = "energy.li-erikes.se";
@@ -42,6 +42,10 @@ public final class MainActivity extends Activity {
     private TextView statusView;
     private ProgressBar progressBar;
     private ScrollView refossPanel;
+    private ScrollView devicesPanel;
+    private HomeIntegration googleHomeIntegration;
+    private TextView googleStatus;
+    private TextView googleDeviceList;
     private RefossSecrets refossSecrets;
     private EditText refossIps;
     private EditText refossKey;
@@ -77,15 +81,16 @@ public final class MainActivity extends Activity {
         home.setOnClickListener(v -> { showDashboard(); webView.loadUrl(DASHBOARD); });
         toolbar.addView(home);
         Button plugs = new Button(this);
-        plugs.setText("Plugs");
+        plugs.setText("Devices");
         plugs.setAllCaps(false);
-        plugs.setOnClickListener(v -> showRefoss());
+        plugs.setOnClickListener(v -> showDevices());
         toolbar.addView(plugs);
         Button refresh = new Button(this);
         refresh.setText("↻");
         refresh.setAllCaps(false);
         refresh.setOnClickListener(v -> {
             if (refossPanel.getVisibility() == View.VISIBLE) checkRefoss();
+            else if (devicesPanel.getVisibility() == View.VISIBLE) discoverGoogleHome();
             else webView.reload();
         });
         toolbar.addView(refresh);
@@ -138,7 +143,7 @@ public final class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 progressBar.setVisibility(View.GONE);
                 if (!pageHasError) {
-                    setStatus("Dashboard connected · Refoss LAN available under Plugs");
+                    setStatus("Dashboard connected · Devices in top menu");
                 }
             }
 
@@ -173,6 +178,14 @@ public final class MainActivity extends Activity {
             }
         });
         root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1f));
+        try {
+            googleHomeIntegration = new HomeIntegrationImpl(this);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Google Home initialization failed", e);
+        }
+        devicesPanel = buildDevicesPanel(padding);
+        devicesPanel.setVisibility(View.GONE);
+        root.addView(devicesPanel, new LinearLayout.LayoutParams(-1, 0, 1f));
         refossSecrets = new RefossSecrets(this);
         refossPanel = buildRefossPanel(padding);
         refossPanel.setVisibility(View.GONE);
@@ -186,7 +199,7 @@ public final class MainActivity extends Activity {
         root.addView(statusView);
         setContentView(root);
 
-        Log.i(TAG, "APP_READY_V030");
+        Log.i(TAG, "APP_READY_V040");
         setStatus("Loading Home-Energy dashboard…");
         if (savedInstanceState != null && webView.restoreState(savedInstanceState) != null) {
             return;
@@ -202,6 +215,91 @@ public final class MainActivity extends Activity {
         label.setTextColor(Color.rgb(233, 241, 236));
         label.setPadding(padding, padding, padding, padding);
         return label;
+    }
+
+
+    private ScrollView buildDevicesPanel(int padding) {
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(padding * 2, padding, padding * 2, padding * 2);
+        panel.addView(textLine("Google Home devices", 21, padding));
+        panel.addView(textLine("Use the devices already connected via Google Home / eHomeLife. " +
+            "No device IP addresses and no bridge pairing key. This preview only reads " +
+            "device names, rooms, connectivity and supported on/off status. " +
+            "Existing automations remain unchanged.", 14, padding));
+
+        googleStatus = textLine("Not connected.", 14, padding);
+        panel.addView(googleStatus);
+
+        Button authorize = new Button(this);
+        authorize.setText("Connect Google Home");
+        authorize.setOnClickListener(v -> {
+            if (googleHomeIntegration == null) {
+                googleStatus.setText("Google Home SDK could not initialize. Check Play services.");
+                return;
+            }
+            googleStatus.setText("Opening Google's home permission screen…");
+            googleHomeIntegration.requestPermission((message, devices) -> {
+                runOnUiThread(() -> googleStatus.setText(message));
+            });
+        });
+        panel.addView(authorize);
+
+        Button discover = new Button(this);
+        discover.setText("Discover devices");
+        discover.setOnClickListener(v -> discoverGoogleHome());
+        panel.addView(discover);
+
+        if (googleHomeIntegration == null || !googleHomeIntegration.isSupported()) {
+            authorize.setEnabled(false);
+            discover.setEnabled(false);
+            googleStatus.setText("This test build has no Google SDK. " +
+                "Install the Google Home-enabled build for authorization and discovery.");
+        }
+        googleDeviceList = textLine("Devices will appear here after consent.", 14, padding);
+        panel.addView(googleDeviceList);
+
+        Button advanced = new Button(this);
+        advanced.setText("Advanced: local Refoss setup");
+        advanced.setOnClickListener(v -> showRefoss());
+        panel.addView(advanced);
+        panel.addView(textLine("Google Home access needs an Android OAuth client for this exact " +
+            "application ID and signing certificate. Neither Refoss nor Google Home " +
+            "devices are reset or modified by discovery.", 12, padding));
+        scroll.addView(panel);
+        return scroll;
+    }
+
+    private void discoverGoogleHome() {
+        if (googleHomeIntegration == null || !googleHomeIntegration.isSupported()) {
+            googleStatus.setText("Google Home is not available in this build.");
+            return;
+        }
+        googleStatus.setText("Reading devices from Google Home…");
+        googleHomeIntegration.readDevices((message, devices) -> {
+            runOnUiThread(() -> {
+                googleStatus.setText(message);
+                StringBuilder text = new StringBuilder();
+                for (HomeIntegration.Device d : devices) {
+                    text.append(d.name).append(" · ").append(d.room).append("\\n");
+                    text.append(d.type).append(" · ");
+                    text.append(d.online ? "online" : "offline").append(" · ");
+                    text.append(d.isOn == null ? "state unknown" : d.isOn ? "ON" : "OFF");
+                    if (d.supportsOnOff) text.append(" · switch capable");
+                    text.append("\\n\\n");
+                }
+                googleDeviceList.setText(text.length() == 0 ? "No devices available." : text.toString());
+            });
+        });
+    }
+
+    private void showDevices() {
+        if (refossPanel != null) refossPanel.setVisibility(View.GONE);
+        if (webView != null) webView.setVisibility(View.GONE);
+        if (devicesPanel != null) devicesPanel.setVisibility(View.VISIBLE);
+        progressBar.setVisibility(View.GONE);
+        setStatus("Google Home devices · read only");
     }
 
     private ScrollView buildRefossPanel(int padding) {
@@ -273,12 +371,14 @@ public final class MainActivity extends Activity {
 
     private void showDashboard() {
         if (refossPanel != null) refossPanel.setVisibility(View.GONE);
+        if (devicesPanel != null) devicesPanel.setVisibility(View.GONE);
         if (webView != null) webView.setVisibility(View.VISIBLE);
         setStatus("Li-Erikes Energy dashboard");
     }
 
     private void showRefoss() {
         if (webView != null) webView.setVisibility(View.GONE);
+        if (devicesPanel != null) devicesPanel.setVisibility(View.GONE);
         if (refossPanel != null) refossPanel.setVisibility(View.VISIBLE);
         progressBar.setVisibility(View.GONE);
         setStatus("Local Refoss status · read only");
@@ -331,6 +431,8 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (refossPanel != null && refossPanel.getVisibility() == View.VISIBLE) {
+            showDevices();
+        } else if (devicesPanel != null && devicesPanel.getVisibility() == View.VISIBLE) {
             showDashboard();
         } else if (webView != null && webView.canGoBack()) {
             webView.goBack();
