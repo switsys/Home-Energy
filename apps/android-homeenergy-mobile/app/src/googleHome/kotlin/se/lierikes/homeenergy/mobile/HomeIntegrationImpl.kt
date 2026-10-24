@@ -12,6 +12,7 @@ import com.google.home.HomeDevice
 import com.google.home.PermissionsResultStatus
 import com.google.home.PermissionsState
 import com.google.home.matter.standard.DimmableLightDevice
+import com.google.home.matter.standard.FanControl
 import com.google.home.matter.standard.FanDevice
 import com.google.home.matter.standard.OnOff
 import com.google.home.matter.standard.OnOffLightDevice
@@ -40,7 +41,7 @@ class HomeIntegrationImpl(private val activity: ComponentActivity) : HomeIntegra
                     DimmableLightDevice,
                     FanDevice,
                 ),
-                traits = listOf(OnOff),
+                traits = listOf(OnOff, FanControl),
             ),
             homePlatformScope = HomeConfig.HomePlatformScope.HOME_PLATFORM_SCOPE_VERSION_1,
         ),
