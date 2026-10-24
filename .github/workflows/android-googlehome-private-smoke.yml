@@ -1,10 +1,8 @@
 name: Google Home APK Android 12 smoke test
 
+# This old v0.4 SDK-only test is opt-in; production v0.5 uses the
+# smaller standard release and its separate install/smoke tests.
 on:
-  pull_request:
-    paths:
-      - "apps/android-homeenergy-mobile/verify-googlehome-install.sh"
-      - ".github/workflows/android-googlehome-private-smoke.yml"
   workflow_dispatch:
 
 permissions:
