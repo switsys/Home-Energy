@@ -217,7 +217,7 @@ public final class MainActivity extends Activity {
         refossIps = new EditText(this);
         refossIps.setTextColor(Color.WHITE);
         refossIps.setHintTextColor(Color.LTGRAY);
-        refossIps.setHint("192.168.1.30\\n192.168.1.31");
+        refossIps.setHint("192.168.1.30\n192.168.1.31");
         refossIps.setSingleLine(false);
         refossIps.setMinLines(3);
         refossIps.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
@@ -238,7 +238,7 @@ public final class MainActivity extends Activity {
         save.setOnClickListener(v -> {
             try {
                 List<String> hosts = parseHosts(refossIps.getText().toString());
-                refossSecrets.saveAddresses(android.text.TextUtils.join("\\n", hosts));
+                refossSecrets.saveAddresses(android.text.TextUtils.join("\n", hosts));
                 if (refossKey.length() > 0) refossSecrets.saveKey(refossKey.getText().toString());
                 refossKey.getText().clear();
                 refossStatus.setText("Saved locally on this phone. Tap Check status.");
@@ -261,7 +261,7 @@ public final class MainActivity extends Activity {
 
     private List<String> parseHosts(String input) {
         LinkedHashSet<String> addresses = new LinkedHashSet<>();
-        for (String host : input.split("[\\\\s,;]+")) {
+        for (String host : input.split("[\\s,;]+")) {
             if (host.isEmpty()) continue;
             if (!RefossLan.privateIpv4(host)) throw new IllegalArgumentException("Private IPv4 required");
             addresses.add(host);
@@ -309,7 +309,7 @@ public final class MainActivity extends Activity {
                     } catch (Exception ex) {
                         result.append("unavailable — check Wi-Fi, IP and device key");
                     }
-                    result.append("\\n");
+                    result.append("\n");
                 }
             } catch (Exception ex) {
                 result.append("Unable to unlock locally saved key. Re-enter your Refoss key.");
