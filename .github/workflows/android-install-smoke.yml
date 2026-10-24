@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "apps/android-install-smoke/**"
+      - "apps/android-homeenergy-mobile/**"
       - ".github/workflows/android-install-smoke.yml"
   workflow_dispatch:
 
@@ -33,12 +34,15 @@ jobs:
         with:
           gradle-version: "9.2.1"
 
-      - name: Build minimal APK
+      - name: Build minimal and mobile APKs
         run: |
           gradle -p apps/android-install-smoke :app:assembleDebug --no-daemon --max-workers=2
-          test -s apps/android-install-smoke/app/build/outputs/apk/debug/app-debug.apk
-          sha256sum apps/android-install-smoke/app/build/outputs/apk/debug/app-debug.apk
-          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose apps/android-install-smoke/app/build/outputs/apk/debug/app-debug.apk
+          gradle -p apps/android-homeenergy-mobile :app:assembleDebug --no-daemon --max-workers=2
+          for apk in apps/android-install-smoke/app/build/outputs/apk/debug/app-debug.apk apps/android-homeenergy-mobile/app/build/outputs/apk/debug/app-debug.apk; do
+            test -s "$apk"
+            sha256sum "$apk"
+            "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          done
 
       - name: Enable KVM for Android emulator
         run: |
@@ -46,16 +50,27 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Install, launch, verify, uninstall on Android 12
+      - name: Install, launch and uninstall both APKs on Android 12
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 31
           target: google_apis
           arch: x86_64
           profile: pixel_4
-          script: bash apps/android-install-smoke/verify-install.sh
+          script: |
+            bash apps/android-install-smoke/verify-install.sh
+            bash apps/android-homeenergy-mobile/verify-install.sh
 
-      - name: Preserve tested APK
+      - name: Preserve tested mobile APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Home-Energy-Mobile-v0.2.0-Android12-verified
+          path: apps/android-homeenergy-mobile/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve minimal smoke test APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
