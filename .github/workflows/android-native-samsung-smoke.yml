@@ -45,21 +45,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_4
-          script: |
-            set -e
-            apk=/tmp/li-energy/Li-Erikes-Energy-v0.6.0.apk
-            pkg=se.lierikes.homeenergy.mobile
-            adb install -r "$apk"
-            adb shell pm path "$pkg" | grep -q 'package:'
-            adb logcat -c
-            adb shell am start -W -n "$pkg/.MainActivity"
-            sleep 8
-            adb shell pidof "$pkg" | grep -Eq '^[0-9]+'
-            adb logcat -d -s HomeEnergyMobile:I AndroidRuntime:E | tee /tmp/li-energy/app-log.txt
-            grep -q APP_READY_V060 /tmp/li-energy/app-log.txt
-            if grep -q 'FATAL EXCEPTION' /tmp/li-energy/app-log.txt; then exit 1; fi
-            adb uninstall "$pkg"
-            echo 'Native Android 12 install, launch, uninstall: PASS'
+          script: bash apps/android-homeenergy-mobile/standalone/verify-install.sh
 
       - name: Preserve tested APK
         if: success()
