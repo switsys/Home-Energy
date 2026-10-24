@@ -31,7 +31,7 @@ import re
 import subprocess
 from pathlib import Path
 xml=Path('/tmp/homeenergy-ui.xml').read_text()
-match=re.search(r'text="Devices"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"',xml)
+match=re.search(r'text="Devices"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',xml)
 if not match:
     raise SystemExit("Devices toolbar button not visible")
 l,t,r,b=map(int,match.groups())
