@@ -1,28 +1,43 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
 }
 
 android {
     namespace = "se.lierikes.homeenergy.mobile"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "se.lierikes.homeenergy.mobile"
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.4.0"
     }
-
+    flavorDimensions += "integration"
+    productFlavors {
+        create("standard") { dimension = "integration" }
+        create("googleHome") { dimension = "integration" }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    kotlin {
+        jvmToolchain(17)
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
 }
 
-// Single Android app: HTTPS dashboard and read-only local Refoss MSS210 status.
-// No Google Home SDK, no Companion dependency and no physical switching.
-
+// Both variants have the same application ID: one app icon, never two installs.
+// CI builds the standard fallback; the private build host adds Google's licensed SDK.
 dependencies {
+    implementation("androidx.activity:activity-ktx:1.12.4")
+    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    add("googleHomeImplementation", "com.google.android.gms:play-services-home:17.1.0")
+    add("googleHomeImplementation", "com.google.android.gms:play-services-home-types:17.1.0")
     testImplementation("junit:junit:4.13.2")
 }
