@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Dashboard: navy background, bright roof and gold energy bolt.
+         Intentionally unlike the plain Google Home companion icon. -->
+    <path android:fillColor="#152B4A"
+        android:pathData="M0,0 H96 V96 H0 Z"/>
+    <path android:fillColor="#F1F6FF"
+        android:pathData="M8,45 L48,12 L88,45 L80,55 L48,29 L16,55 Z"/>
+    <path android:fillColor="#A9DCE8"
+        android:pathData="M23,51 H73 V83 H23 Z"/>
+    <path android:fillColor="#152B4A"
+        android:pathData="M33,52 H63 V83 H33 Z"/>
+    <path android:fillColor="#FFD34D"
+        android:pathData="M56,36 L35,64 H48 L42,86 L67,55 H54 Z"/>
+</vector>

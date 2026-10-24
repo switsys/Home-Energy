@@ -1,0 +1,68 @@
+name: Li-Erikes Energy Google Home v0.7 upgrade test
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/android-googlehome-upgrade-smoke.yml'
+      - 'apps/android-homeenergy-mobile/verify-googlehome-upgrade.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android12-googlehome-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v4
+
+      - name: Download both exact release-signed APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/home-energy-upgrade
+          gh release download v0.6.0-native-samsung-test -R switsys/Home-Energy \
+            --pattern Li-Erikes-Energy-v0.6.0.apk --dir /tmp/home-energy-upgrade
+          gh release download v0.7.0-googlehome-rc1-internal -R switsys/Home-Energy \
+            --pattern Li-Erikes-Energy-v0.7.0-GoogleHome-test.apk --dir /tmp/home-energy-upgrade
+          echo 'deeb81c0e0a592b0a3e84031d9c4139fe9c32f65f6ded68ef9ba831b79ddf7bf  /tmp/home-energy-upgrade/Li-Erikes-Energy-v0.6.0.apk' | sha256sum --check
+          echo '7519bf5f2c701a07bac795ca6466b564f25bf8eebf58e6c72cba5c4d396aebb5  /tmp/home-energy-upgrade/Li-Erikes-Energy-v0.7.0-GoogleHome-test.apk' | sha256sum --check
+          tools="${ANDROID_HOME}/build-tools/35.0.0"
+          a=/tmp/home-energy-upgrade/Li-Erikes-Energy-v0.6.0.apk
+          b=/tmp/home-energy-upgrade/Li-Erikes-Energy-v0.7.0-GoogleHome-test.apk
+          "$tools/apksigner" verify "$a"
+          "$tools/apksigner" verify "$b"
+          old=$("$tools/apksigner" verify --print-certs "$a" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
+          new=$("$tools/apksigner" verify --print-certs "$b" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
+          test -n "$old" && test "$old" = "$new"
+          "$tools/aapt" dump badging "$b" | grep -q "name='se.lierikes.homeenergy.mobile' versionCode='8' versionName='0.7.0'"
+
+      - name: Enable emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Verify in-place update and launch on Android 12
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          script: bash apps/android-homeenergy-mobile/verify-googlehome-upgrade.sh
+
+      - name: Preserve emulator logs and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Li-Erikes-Energy-v0.7-GoogleHome-upgrade-test-evidence
+          path: |
+            /tmp/home-energy-upgrade/launch-log.txt
+            /tmp/home-energy-upgrade/v07-launch.png
+            /tmp/home-energy-upgrade/v07-devices.png
+          if-no-files-found: warn
+          retention-days: 7

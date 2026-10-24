@@ -1,0 +1,67 @@
+name: Google Home APK Android 12 smoke test
+
+# This old v0.4 SDK-only test is opt-in; production v0.5 uses the
+# smaller standard release and its separate install/smoke tests.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install-googlehome-apk:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout the unified app
+        uses: actions/checkout@v4
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Download temporary Android test candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/ghome-apk
+          gh release download v0.4.0-rc1-internal \
+            --repo switsys/Home-Energy \
+            --pattern 'app-googleHome-debug.apk' \
+            --dir /tmp/ghome-apk
+          test -s /tmp/ghome-apk/app-googleHome-debug.apk
+          sha256sum /tmp/ghome-apk/app-googleHome-debug.apk
+          echo 'f6533074d7d615ca9916caac8cb571aeda8eec0252528b561a9d5dac563a6cdb  /tmp/ghome-apk/app-googleHome-debug.apk' | sha256sum --check
+
+      - name: Enable KVM for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and launch actual Google Home SDK APK
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          script: bash apps/android-homeenergy-mobile/verify-googlehome-install.sh
+
+      - name: Save emulator-verified candidate APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Li-Erikes-Energy-v0.4.0-GoogleHome-Android12-launch-verified
+          path: /tmp/ghome-apk/app-googleHome-debug.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Preserve emulator screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Li-Erikes-Energy-v0.4.0-Android12-screenshots
+          path: /tmp/homeenergy-*.png
+          if-no-files-found: warn
+          retention-days: 7

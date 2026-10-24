@@ -1,0 +1,57 @@
+name: Native Li-Erikes Energy Android 12 install test
+
+on:
+  pull_request:
+    paths:
+      - "apps/android-homeenergy-mobile/standalone/**"
+      - ".github/workflows/android-native-samsung-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install-native-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Download exact native signed APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/li-energy
+          gh release download v0.6.0-native-samsung-test \
+            -R switsys/Home-Energy \
+            --pattern 'Li-Erikes-Energy-v0.6.0.apk' \
+            --dir /tmp/li-energy
+          echo 'deeb81c0e0a592b0a3e84031d9c4139fe9c32f65f6ded68ef9ba831b79ddf7bf  /tmp/li-energy/Li-Erikes-Energy-v0.6.0.apk' | sha256sum --check
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose /tmp/li-energy/Li-Erikes-Energy-v0.6.0.apk
+          "${ANDROID_HOME}/build-tools/35.0.0/aapt" dump badging /tmp/li-energy/Li-Erikes-Energy-v0.6.0.apk | grep "name='se.lierikes.homeenergy.mobile' versionCode='7' versionName='0.6.0'"
+
+      - name: Enable Android emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and launch exact native APK on Android 12
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          script: bash apps/android-homeenergy-mobile/standalone/verify-install.sh
+
+      - name: Preserve tested APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Li-Erikes-Energy-v0.6.0-native-Android12-verified
+          path: /tmp/li-energy/Li-Erikes-Energy-v0.6.0.apk
+          retention-days: 14
+          if-no-files-found: error
