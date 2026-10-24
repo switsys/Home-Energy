@@ -52,7 +52,7 @@ public final class MainActivity extends Activity {
         toolbar.setPadding(padding, padding, padding, padding);
 
         TextView title = new TextView(this);
-        title.setText("HOME-ENERGY");
+        title.setText("LI-ERIKES ENERGY");
         title.setTextSize(19f);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setTextColor(Color.rgb(247, 223, 149));
@@ -118,7 +118,7 @@ public final class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 progressBar.setVisibility(View.GONE);
                 if (!pageHasError) {
-                    setStatus("Connected · Google Home controls are not enabled in this app");
+                    setStatus("Dashboard connected · Google Home devices use Companion");
                 }
             }
 
