@@ -71,6 +71,7 @@ Tibber dashboard and Advanced Refoss LAN fallback, without Google's SDK.
 The private `googleHome` variant adds a **Google Home Devices** page in that exact
 same installed application. Both flavors use the same launcher label/icon.
 
+- Tap **Devices → Open existing Google Home controls** to use your already-working Google Home app immediately, with no OAuth configuration in Home-Energy. This opens the Google Home app and does not import its devices into Home-Energy.
 - Tap **Devices → Connect Google Home** to authorize the home/structure;
   **Discover devices** to read back Google Home names, rooms, online and on/off states.
 - Device types include **FanDevice**, because an eHomeLife/Meross smart outlet may
