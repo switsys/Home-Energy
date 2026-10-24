@@ -20,6 +20,12 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ScrollView;
+import android.text.InputType;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -35,6 +41,12 @@ public final class MainActivity extends Activity {
     private WebView webView;
     private TextView statusView;
     private ProgressBar progressBar;
+    private ScrollView refossPanel;
+    private RefossSecrets refossSecrets;
+    private EditText refossIps;
+    private EditText refossKey;
+    private TextView refossStatus;
+    private Button refossCheck;
     private boolean pageHasError = false;
 
     @Override
@@ -52,8 +64,8 @@ public final class MainActivity extends Activity {
         toolbar.setPadding(padding, padding, padding, padding);
 
         TextView title = new TextView(this);
-        title.setText("LI-ERIKES ENERGY");
-        title.setTextSize(19f);
+        title.setText("Li-Erikes");
+        title.setTextSize(16f);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setTextColor(Color.rgb(247, 223, 149));
         title.setPadding(padding, 0, padding, 0);
@@ -62,12 +74,20 @@ public final class MainActivity extends Activity {
         Button home = new Button(this);
         home.setText("Home");
         home.setAllCaps(false);
-        home.setOnClickListener(v -> webView.loadUrl(DASHBOARD));
+        home.setOnClickListener(v -> { showDashboard(); webView.loadUrl(DASHBOARD); });
         toolbar.addView(home);
+        Button plugs = new Button(this);
+        plugs.setText("Plugs");
+        plugs.setAllCaps(false);
+        plugs.setOnClickListener(v -> showRefoss());
+        toolbar.addView(plugs);
         Button refresh = new Button(this);
-        refresh.setText("Reload");
+        refresh.setText("↻");
         refresh.setAllCaps(false);
-        refresh.setOnClickListener(v -> webView.reload());
+        refresh.setOnClickListener(v -> {
+            if (refossPanel.getVisibility() == View.VISIBLE) checkRefoss();
+            else webView.reload();
+        });
         toolbar.addView(refresh);
         root.addView(toolbar);
 
@@ -118,7 +138,7 @@ public final class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 progressBar.setVisibility(View.GONE);
                 if (!pageHasError) {
-                    setStatus("Dashboard connected · Google Home devices use Companion");
+                    setStatus("Dashboard connected · Refoss LAN available under Plugs");
                 }
             }
 
@@ -153,6 +173,10 @@ public final class MainActivity extends Activity {
             }
         });
         root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1f));
+        refossSecrets = new RefossSecrets(this);
+        refossPanel = buildRefossPanel(padding);
+        refossPanel.setVisibility(View.GONE);
+        root.addView(refossPanel, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         statusView = new TextView(this);
         statusView.setTextColor(Color.rgb(225, 235, 227));
@@ -162,12 +186,142 @@ public final class MainActivity extends Activity {
         root.addView(statusView);
         setContentView(root);
 
-        Log.i(TAG, "APP_READY_V020");
+        Log.i(TAG, "APP_READY_V030");
         setStatus("Loading Home-Energy dashboard…");
         if (savedInstanceState != null && webView.restoreState(savedInstanceState) != null) {
             return;
         }
         webView.loadUrl(DASHBOARD);
+    }
+
+
+    private TextView textLine(String value, int size, int padding) {
+        TextView label = new TextView(this);
+        label.setText(value);
+        label.setTextSize(size);
+        label.setTextColor(Color.rgb(233, 241, 236));
+        label.setPadding(padding, padding, padding, padding);
+        return label;
+    }
+
+    private ScrollView buildRefossPanel(int padding) {
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(padding * 2, padding, padding, padding * 2, padding * 2);
+        panel.addView(textLine("Refoss MSS210 · local Wi-Fi", 21, padding));
+        panel.addView(textLine(
+            "Read-only plug status. Your phone must be on the same Wi-Fi as the plugs. " +
+            "Enter their private IP addresses from your router, one per line. " +
+            "No Google account, bridge pairing, cloud login or device switching.", 14, padding));
+        refossIps = new EditText(this);
+        refossIps.setTextColor(Color.WHITE);
+        refossIps.setHintTextColor(Color.LTGRAY);
+        refossIps.setHint("192.168.1.30\\n192.168.1.31");
+        refossIps.setSingleLine(false);
+        refossIps.setMinLines(3);
+        refossIps.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        refossIps.setText(refossSecrets.addresses());
+        panel.addView(refossIps);
+
+        panel.addView(textLine("Refoss local device key (optional for first status attempt; NOT the Home-Energy bridge key)", 13, padding));
+        refossKey = new EditText(this);
+        refossKey.setTextColor(Color.WHITE);
+        refossKey.setHintTextColor(Color.LTGRAY);
+        refossKey.setHint(refossSecrets.hasKey() ? "Saved securely. Leave blank to keep." : "Only if required by your plug");
+        refossKey.setSingleLine(true);
+        refossKey.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        panel.addView(refossKey);
+
+        Button save = new Button(this);
+        save.setText("Save local settings");
+        save.setOnClickListener(v -> {
+            try {
+                List<String> hosts = parseHosts(refossIps.getText().toString());
+                refossSecrets.saveAddresses(android.text.TextUtils.join("\\n", hosts));
+                if (refossKey.length() > 0) refossSecrets.saveKey(refossKey.getText().toString());
+                refossKey.getText().clear();
+                refossStatus.setText("Saved locally on this phone. Tap Check status.");
+            } catch (Exception e) {
+                refossStatus.setText("Check the private IP addresses or key.");
+            }
+        });
+        panel.addView(save);
+
+        refossCheck = new Button(this);
+        refossCheck.setText("Check plug status (read-only)");
+        refossCheck.setOnClickListener(v -> checkRefoss());
+        panel.addView(refossCheck);
+
+        refossStatus = textLine("No devices checked yet. On/off control is deliberately disabled.", 14, padding);
+        panel.addView(refossStatus);
+        scroll.addView(panel);
+        return scroll;
+    }
+
+    private List<String> parseHosts(String input) {
+        LinkedHashSet<String> addresses = new LinkedHashSet<>();
+        for (String host : input.split("[\\\\s,;]+")) {
+            if (host.isEmpty()) continue;
+            if (!RefossLan.privateIpv4(host)) throw new IllegalArgumentException("Private IPv4 required");
+            addresses.add(host);
+            if (addresses.size() > 16) throw new IllegalArgumentException("Too many devices");
+        }
+        if (addresses.isEmpty()) throw new IllegalArgumentException("Add a plug IP address");
+        return new ArrayList<>(addresses);
+    }
+
+    private void showDashboard() {
+        if (refossPanel != null) refossPanel.setVisibility(View.GONE);
+        if (webView != null) webView.setVisibility(View.VISIBLE);
+        setStatus("Li-Erikes Energy dashboard");
+    }
+
+    private void showRefoss() {
+        if (webView != null) webView.setVisibility(View.GONE);
+        if (refossPanel != null) refossPanel.setVisibility(View.VISIBLE);
+        progressBar.setVisibility(View.GONE);
+        setStatus("Local Refoss status · read only");
+    }
+
+    private void checkRefoss() {
+        final List<String> hosts;
+        try {
+            hosts = parseHosts(refossSecrets.addresses());
+        } catch (Exception e) {
+            refossStatus.setText("Save one or more private LAN addresses first.");
+            return;
+        }
+        refossCheck.setEnabled(false);
+        refossStatus.setText("Checking configured plugs on this Wi-Fi…");
+        new Thread(() -> {
+            StringBuilder result = new StringBuilder();
+            try {
+                String key = refossSecrets.getKey();
+                for (String host : hosts) {
+                    result.append(host).append(": ");
+                    try {
+                        RefossLan.DeviceState state = RefossLan.read(host, key);
+                        result.append(state.model).append(" · ");
+                        result.append(state.on == null ? "state unavailable" : state.on ? "ON" : "OFF");
+                    } catch (SecurityException ex) {
+                        result.append("authorization failed — local Refoss key may be needed");
+                    } catch (Exception ex) {
+                        result.append("unavailable — check Wi-Fi, IP and device key");
+                    }
+                    result.append("\\n");
+                }
+            } catch (Exception ex) {
+                result.append("Unable to unlock locally saved key. Re-enter your Refoss key.");
+            }
+            final String report = result.toString();
+            runOnUiThread(() -> {
+                if (!isFinishing() && !isDestroyed()) {
+                    refossStatus.setText(report);
+                    refossCheck.setEnabled(true);
+                }
+            });
+        }, "refoss-local-read").start();
     }
 
     private void setStatus(String text) {
@@ -176,7 +330,9 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
+        if (refossPanel != null && refossPanel.getVisibility() == View.VISIBLE) {
+            showDashboard();
+        } else if (webView != null && webView.canGoBack()) {
             webView.goBack();
         } else {
             super.onBackPressed();
