@@ -19,6 +19,10 @@ android {
         create("standard") { dimension = "integration" }
         create("googleHome") { dimension = "integration" }
     }
+    // Offline private Android SDK lacks lint-gradle; regular CI tests still run.
+    lint {
+        checkReleaseBuilds = false
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
