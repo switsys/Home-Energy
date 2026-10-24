@@ -7,10 +7,10 @@ component="$package/.MainActivity"
 
 test -s "$apk" || { echo "FAIL: missing APK"; exit 1; }
 echo "Checking manifest permissions and launcher"
-badging="$(aapt dump badging "$apk")"
+badging="$("${ANDROID_HOME}/build-tools/35.0.0/aapt" dump badging "$apk")"
 grep -q "^package: name='$package'" <<< "$badging"
 grep -q "launchable-activity: name='$package.MainActivity'" <<< "$badging"
-permissions="$(aapt dump permissions "$apk")"
+permissions="$("${ANDROID_HOME}/build-tools/35.0.0/aapt" dump permissions "$apk")"
 grep -q 'android.permission.INTERNET' <<< "$permissions"
 if grep -qE 'android.permission.(CAMERA|RECORD_AUDIO|READ_CONTACTS|WRITE_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|READ_SMS)' <<< "$permissions"; then
     echo "FAIL: unexpected sensitive permission"
